@@ -478,21 +478,21 @@ async function main(): Promise<void> {
 
   // Channel callbacks (shared by all channels)
   const channelOpts = {
-    onMessage: (_chatJid: string, msg: NewMessage) => {
+    onMessage: (chatJid: string, msg: NewMessage) => {
       // Sender allowlist drop mode: discard messages from denied senders before storing
       if (
         !msg.is_from_me &&
         !msg.is_bot_message &&
-        registeredGroups[_chatJid]
+        registeredGroups[chatJid]
       ) {
         const cfg = loadSenderAllowlist();
         if (
-          shouldDropMessage(_chatJid, cfg) &&
-          !isSenderAllowed(_chatJid, msg.sender, cfg)
+          shouldDropMessage(chatJid, cfg) &&
+          !isSenderAllowed(chatJid, msg.sender, cfg)
         ) {
           if (cfg.logDenied) {
             logger.debug(
-              { chatJid: _chatJid, sender: msg.sender },
+              { chatJid, sender: msg.sender },
               'sender-allowlist: dropping message (drop mode)',
             );
           }
