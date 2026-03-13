@@ -15,7 +15,7 @@
 
 ---
 
-<h2 align="center">🐳 Now Running in Docker Sandboxes</h2>
+<h2 align="center">🐳 Now Runs in Docker Sandboxes</h2>
 <p align="center">Every agent gets its own isolated container inside a micro VM.<br>Hypervisor-level isolation. Millisecond startup. No complex setup.</p>
 
 **macOS (Apple Silicon)**
