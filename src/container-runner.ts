@@ -28,10 +28,268 @@ import {
 import { detectAuthMode } from './credential-proxy.js';
 import { validateAdditionalMounts } from './mount-security.js';
 import { RegisteredGroup } from './types.js';
+import {
+  addDailyTokenUsage,
+  appendActivityEntry,
+  completeAgentRun,
+  createAgentRun,
+  getActionCountInWindow,
+  getAgentById,
+  getAgentPath,
+  getAncestryChain,
+  getCachedSharedSpaceIndex,
+  getDailyTokenUsage,
+  getDirectChildren,
+  getUnreadInboxMessages,
+  insertHitlCard,
+  markInboxMessagesRead,
+  updateAgentStatus,
+  type AgentRow,
+} from './db.js';
 
 // Sentinel markers for robust output parsing (must match agent-runner)
 const OUTPUT_START_MARKER = '---NANOCLAW_OUTPUT_START---';
 const OUTPUT_END_MARKER = '---NANOCLAW_OUTPUT_END---';
+
+// --- Octopus: Event broadcast ---
+
+export type OctopusEvent = {
+  v: 1;
+  type: string;
+  ts: number;
+  payload: Record<string, unknown>;
+};
+
+type BroadcastFn = (event: OctopusEvent) => void;
+let broadcastFn: BroadcastFn = () => {};
+
+export function setBroadcastFn(fn: BroadcastFn): void {
+  broadcastFn = fn;
+}
+
+export function broadcast(type: string, payload: Record<string, unknown>): void {
+  broadcastFn({ v: 1, type, ts: Date.now(), payload });
+}
+
+// --- Octopus: Configuration ---
+
+const CIRCUIT_BREAKER_WINDOW_MS = parseInt(
+  process.env.CIRCUIT_BREAKER_WINDOW_MS || '300000',
+  10,
+); // 5 min default
+const CIRCUIT_BREAKER_THRESHOLD = parseInt(
+  process.env.CIRCUIT_BREAKER_THRESHOLD || '50',
+  10,
+);
+const DEFAULT_DAILY_TOKEN_BUDGET = parseInt(
+  process.env.DEFAULT_DAILY_TOKEN_BUDGET || '0',
+  10,
+); // 0 = no limit
+
+// --- Octopus: ID generation ---
+
+let idCounter = 0;
+export function generateId(prefix: string): string {
+  const ts = Date.now().toString(36);
+  const rand = Math.random().toString(36).slice(2, 6);
+  return `${prefix}_${ts}${rand}${(idCounter++).toString(36)}`;
+}
+
+// --- Octopus: Budget check ---
+
+export function checkDailyBudget(
+  agentId: string,
+  triggerType: string,
+  budgetTokens?: number,
+): boolean {
+  const budget = budgetTokens || DEFAULT_DAILY_TOKEN_BUDGET;
+  if (budget <= 0) return true; // No budget configured
+  const used = getDailyTokenUsage(agentId);
+  if (used >= budget) {
+    broadcast('agent.budget.exceeded', {
+      agent_id: agentId,
+      budget_tokens: budget,
+      used_tokens: used,
+      period: 'daily',
+      blocked_trigger_type: triggerType,
+    });
+    updateAgentStatus(agentId, 'alert');
+    broadcast('agent.status.changed', {
+      agent_id: agentId,
+      status: 'alert',
+      previous_status: 'idle',
+    });
+    return false;
+  }
+  return true;
+}
+
+// --- Octopus: Circuit breaker check ---
+
+export function checkCircuitBreaker(agentId: string, runId: string): boolean {
+  const count = getActionCountInWindow(agentId, CIRCUIT_BREAKER_WINDOW_MS);
+  if (count >= CIRCUIT_BREAKER_THRESHOLD) {
+    const agent = getAgentById(agentId);
+    updateAgentStatus(agentId, 'circuit-breaker');
+    broadcast('agent.budget.circuit_breaker', {
+      agent_id: agentId,
+      run_id: runId,
+      action_count: count,
+      window_seconds: Math.round(CIRCUIT_BREAKER_WINDOW_MS / 1000),
+      threshold: CIRCUIT_BREAKER_THRESHOLD,
+    });
+
+    // Write circuit_breaker HITL card
+    const cardId = generateId('card');
+    insertHitlCard({
+      card_id: cardId,
+      card_type: 'circuit_breaker',
+      agent_id: agentId,
+      subject: `Circuit breaker tripped: ${count} actions in ${Math.round(CIRCUIT_BREAKER_WINDOW_MS / 1000)}s`,
+      context: `Agent '${agent?.agent_name || agentId}' exceeded the action threshold of ${CIRCUIT_BREAKER_THRESHOLD} actions within a ${Math.round(CIRCUIT_BREAKER_WINDOW_MS / 1000)}-second sliding window. Current action count: ${count}. The agent has been paused.`,
+      options: null,
+      preference: null,
+      run_id: runId,
+      message_array: null, // Will be set by caller if needed
+      created_ts: Date.now(),
+    });
+
+    broadcast('hitl.card.created', {
+      card_id: cardId,
+      card_type: 'circuit_breaker',
+      agent_id: agentId,
+      agent_name: agent?.agent_name || agentId,
+      agent_path: getAgentPath(agentId),
+      subject: `Circuit breaker tripped: ${count} actions in ${Math.round(CIRCUIT_BREAKER_WINDOW_MS / 1000)}s`,
+      context: `Agent exceeded ${CIRCUIT_BREAKER_THRESHOLD} actions within sliding window.`,
+      options: null,
+      preference: null,
+      run_id: runId,
+    });
+
+    return true; // breaker tripped
+  }
+  return false;
+}
+
+// --- Octopus: Tool category mapping ---
+
+export function getToolCategory(toolName: string): string {
+  switch (toolName) {
+    case 'sharedspace_read':
+    case 'sharedspace_list':
+      return 'read';
+    case 'sharedspace_write':
+      return 'write';
+    case 'request_hitl':
+      return 'hitl';
+    case 'send_message':
+      return 'message';
+    default:
+      return 'shell';
+  }
+}
+
+// --- Octopus: Prompt assembly ---
+
+export function assembleSystemPrompt(agentId: string): string {
+  const agent = getAgentById(agentId);
+  if (!agent) return '';
+
+  // 1. Agent's CLAUDE.md content
+  const agentDir = path.join(GROUPS_DIR, agent.agent_id);
+  let claudeMd = '';
+  const claudeMdPath = path.join(agentDir, 'CLAUDE.md');
+  if (fs.existsSync(claudeMdPath)) {
+    claudeMd = fs.readFileSync(claudeMdPath, 'utf-8');
+  }
+
+  // 2. Auto-generated boilerplate
+  const ancestry = getAncestryChain(agentId);
+  const parent = ancestry.length > 1 ? ancestry[ancestry.length - 2] : null;
+  const children = getDirectChildren(agentId);
+
+  let boilerplate = '## Position\n\n';
+  if (parent) {
+    boilerplate += `You report to ${parent.agent_name}.\n`;
+  } else {
+    boilerplate += 'You report directly to the CEO.\n';
+  }
+  boilerplate += `Your position in the hierarchy: ${ancestry.map((a) => a.agent_name).join(' → ')}\n`;
+  if (children.length > 0) {
+    boilerplate += `Direct reports: ${children.map((c) => c.agent_name).join(', ')}\n`;
+  }
+
+  boilerplate += '\n## Instructions\n\n';
+  boilerplate +=
+    '- **Escalation:** If you hit a decision you cannot make alone, escalate to your manager.\n';
+  boilerplate +=
+    '- **Inbox:** Process unread inbox messages before your main task.\n';
+  boilerplate +=
+    '- **Approvals:** See SharedSpace approval policy for when approval is required.\n';
+  boilerplate += '\n## Available Tools\n\n';
+  boilerplate += '- `sharedspace_read(id)` — Read a SharedSpace page\n';
+  boilerplate += '- `sharedspace_write(id, content)` — Write a SharedSpace page\n';
+  boilerplate += '- `sharedspace_list(prefix?)` — List SharedSpace pages\n';
+  boilerplate += '- `send_message(to, subject, body)` — Send a message to another agent\n';
+  boilerplate +=
+    '- `request_hitl(type, subject, context, options?, preference?)` — Request CEO input\n';
+
+  // Inbox notification
+  const unread = getUnreadInboxMessages(agentId);
+  if (unread.length > 0) {
+    boilerplate =
+      `**📬 You have ${unread.length} unread inbox message(s). Process these before your main task.**\n\n` +
+      boilerplate;
+  }
+
+  // 3. Cached SharedSpace index
+  const ssIndex = getCachedSharedSpaceIndex(agentId) || '';
+
+  const parts = [claudeMd, boilerplate];
+  if (ssIndex) {
+    parts.push('## SharedSpace Index\n\n' + ssIndex);
+  }
+
+  return parts.filter(Boolean).join('\n\n---\n\n');
+}
+
+export function generateBoilerplate(agentId: string): string {
+  const agent = getAgentById(agentId);
+  if (!agent) return '';
+
+  const ancestry = getAncestryChain(agentId);
+  const parent = ancestry.length > 1 ? ancestry[ancestry.length - 2] : null;
+  const children = getDirectChildren(agentId);
+
+  let boilerplate = '## Position\n\n';
+  if (parent) {
+    boilerplate += `You report to ${parent.agent_name}.\n`;
+  } else {
+    boilerplate += 'You report directly to the CEO.\n';
+  }
+  boilerplate += `Your position in the hierarchy: ${ancestry.map((a) => a.agent_name).join(' → ')}\n`;
+  if (children.length > 0) {
+    boilerplate += `Direct reports: ${children.map((c) => c.agent_name).join(', ')}\n`;
+  }
+
+  boilerplate += '\n## Instructions\n\n';
+  boilerplate +=
+    '- **Escalation:** If you hit a decision you cannot make alone, escalate to your manager.\n';
+  boilerplate +=
+    '- **Inbox:** Process unread inbox messages before your main task.\n';
+  boilerplate +=
+    '- **Approvals:** See SharedSpace approval policy for when approval is required.\n';
+  boilerplate += '\n## Available Tools\n\n';
+  boilerplate += '- `sharedspace_read(id)` — Read a SharedSpace page\n';
+  boilerplate += '- `sharedspace_write(id, content)` — Write a SharedSpace page\n';
+  boilerplate += '- `sharedspace_list(prefix?)` — List SharedSpace pages\n';
+  boilerplate += '- `send_message(to, subject, body)` — Send a message to another agent\n';
+  boilerplate +=
+    '- `request_hitl(type, subject, context, options?, preference?)` — Request CEO input\n';
+
+  return boilerplate;
+}
 
 export interface ContainerInput {
   prompt: string;

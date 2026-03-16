@@ -82,6 +82,157 @@ function createSchema(database: Database.Database): void {
       container_config TEXT,
       requires_trigger INTEGER DEFAULT 1
     );
+
+    -- Octopus: Agent hierarchy
+    CREATE TABLE IF NOT EXISTS agents (
+      agent_id TEXT PRIMARY KEY,
+      agent_name TEXT NOT NULL,
+      parent_id TEXT,
+      depth INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'idle',
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY (parent_id) REFERENCES agents(agent_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_agents_parent ON agents(parent_id);
+
+    -- Octopus: Daily token usage per agent
+    CREATE TABLE IF NOT EXISTS daily_token_usage (
+      agent_id TEXT NOT NULL,
+      date TEXT NOT NULL,
+      tokens_used INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (agent_id, date),
+      FOREIGN KEY (agent_id) REFERENCES agents(agent_id)
+    );
+
+    -- Octopus: Activity feed
+    CREATE TABLE IF NOT EXISTS activity_feed (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      ts INTEGER NOT NULL,
+      agent_id TEXT NOT NULL,
+      run_id TEXT NOT NULL,
+      entry_id TEXT NOT NULL,
+      entry_type TEXT NOT NULL,
+      tool_name TEXT NOT NULL,
+      tool_category TEXT NOT NULL,
+      detail TEXT,
+      outcome TEXT,
+      FOREIGN KEY (agent_id) REFERENCES agents(agent_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_activity_agent_run ON activity_feed(agent_id, run_id);
+    CREATE INDEX IF NOT EXISTS idx_activity_agent_ts ON activity_feed(agent_id, ts);
+
+    -- Octopus: Agent runs
+    CREATE TABLE IF NOT EXISTS agent_runs (
+      run_id TEXT PRIMARY KEY,
+      agent_id TEXT NOT NULL,
+      trigger_type TEXT NOT NULL,
+      trigger_detail TEXT,
+      started_ts INTEGER NOT NULL,
+      completed_ts INTEGER,
+      exit_reason TEXT,
+      total_tokens INTEGER DEFAULT 0,
+      error_detail TEXT,
+      FOREIGN KEY (agent_id) REFERENCES agents(agent_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_runs_agent ON agent_runs(agent_id, started_ts);
+
+    -- Octopus: SharedSpace pages
+    CREATE TABLE IF NOT EXISTS sharedspace_pages (
+      page_id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      summary TEXT NOT NULL,
+      owner_agent_id TEXT NOT NULL,
+      updated_by TEXT NOT NULL,
+      updated_ts INTEGER NOT NULL,
+      body TEXT NOT NULL DEFAULT '',
+      parent_id TEXT,
+      depth INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_ss_parent ON sharedspace_pages(parent_id);
+    CREATE INDEX IF NOT EXISTS idx_ss_owner ON sharedspace_pages(owner_agent_id);
+
+    -- Octopus: Cached SharedSpace index per agent
+    CREATE TABLE IF NOT EXISTS sharedspace_index_cache (
+      agent_id TEXT PRIMARY KEY,
+      index_text TEXT NOT NULL,
+      computed_at INTEGER NOT NULL,
+      FOREIGN KEY (agent_id) REFERENCES agents(agent_id)
+    );
+
+    -- Octopus: Cross-branch message queue
+    CREATE TABLE IF NOT EXISTS cross_branch_queue (
+      message_id TEXT PRIMARY KEY,
+      sender_agent_id TEXT NOT NULL,
+      recipient_agent_id TEXT NOT NULL,
+      subject TEXT NOT NULL,
+      body TEXT NOT NULL,
+      run_id TEXT NOT NULL,
+      message_array TEXT,
+      arrived_ts INTEGER NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      FOREIGN KEY (sender_agent_id) REFERENCES agents(agent_id),
+      FOREIGN KEY (recipient_agent_id) REFERENCES agents(agent_id)
+    );
+
+    -- Octopus: HITL queue
+    CREATE TABLE IF NOT EXISTS hitl_queue (
+      card_id TEXT PRIMARY KEY,
+      card_type TEXT NOT NULL,
+      agent_id TEXT NOT NULL,
+      subject TEXT NOT NULL,
+      context TEXT NOT NULL,
+      options TEXT,
+      preference INTEGER,
+      run_id TEXT NOT NULL,
+      message_array TEXT,
+      resolution TEXT,
+      selected_option INTEGER,
+      note TEXT,
+      created_ts INTEGER NOT NULL,
+      resolved_ts INTEGER,
+      FOREIGN KEY (agent_id) REFERENCES agents(agent_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_hitl_agent ON hitl_queue(agent_id);
+
+    -- Octopus: Conversations
+    CREATE TABLE IF NOT EXISTS conversations (
+      conversation_id TEXT PRIMARY KEY,
+      agent_id TEXT NOT NULL,
+      started_ts INTEGER NOT NULL,
+      last_message_ts INTEGER,
+      active INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (agent_id) REFERENCES agents(agent_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_conv_agent ON conversations(agent_id);
+
+    -- Octopus: Conversation messages
+    CREATE TABLE IF NOT EXISTS conversation_messages (
+      message_id TEXT PRIMARY KEY,
+      conversation_id TEXT NOT NULL,
+      agent_id TEXT NOT NULL,
+      role TEXT NOT NULL,
+      content TEXT NOT NULL,
+      ts INTEGER NOT NULL,
+      run_id TEXT,
+      FOREIGN KEY (conversation_id) REFERENCES conversations(conversation_id),
+      FOREIGN KEY (agent_id) REFERENCES agents(agent_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_convmsg_conv ON conversation_messages(conversation_id, ts);
+
+    -- Octopus: Agent inbox messages
+    CREATE TABLE IF NOT EXISTS inbox_messages (
+      message_id TEXT PRIMARY KEY,
+      recipient_agent_id TEXT NOT NULL,
+      from_agent_id TEXT NOT NULL,
+      from_agent_name TEXT NOT NULL,
+      subject TEXT NOT NULL,
+      body TEXT NOT NULL,
+      cross_branch INTEGER NOT NULL DEFAULT 0,
+      delivered_ts INTEGER NOT NULL,
+      read INTEGER NOT NULL DEFAULT 0,
+      FOREIGN KEY (recipient_agent_id) REFERENCES agents(agent_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_inbox_recipient ON inbox_messages(recipient_agent_id, read);
   `);
 
   // Add context_mode column if it doesn't exist (migration for existing DBs)
@@ -635,6 +786,628 @@ export function getAllRegisteredGroups(): Record<string, RegisteredGroup> {
 }
 
 // --- JSON migration ---
+
+// --- Octopus: Agent hierarchy ---
+
+export interface AgentRow {
+  agent_id: string;
+  agent_name: string;
+  parent_id: string | null;
+  depth: number;
+  status: string;
+  created_at: number;
+}
+
+/** Get full agent tree ordered depth-first */
+export function getAgentTree(): AgentRow[] {
+  // Build depth-first order using recursive CTE
+  const rows = db
+    .prepare(
+      `WITH RECURSIVE tree AS (
+        SELECT agent_id, agent_name, parent_id, depth, status, created_at, agent_name AS sort_path
+        FROM agents WHERE parent_id IS NULL
+        UNION ALL
+        SELECT a.agent_id, a.agent_name, a.parent_id, a.depth, a.status, a.created_at,
+               tree.sort_path || '/' || a.agent_name
+        FROM agents a JOIN tree ON a.parent_id = tree.agent_id
+      )
+      SELECT agent_id, agent_name, parent_id, depth, status, created_at FROM tree ORDER BY sort_path`,
+    )
+    .all() as AgentRow[];
+  return rows;
+}
+
+export function getAgentById(agentId: string): AgentRow | undefined {
+  return db.prepare('SELECT * FROM agents WHERE agent_id = ?').get(agentId) as
+    | AgentRow
+    | undefined;
+}
+
+export function insertAgent(
+  agentId: string,
+  agentName: string,
+  parentId: string | null,
+): AgentRow {
+  let depth = 0;
+  if (parentId) {
+    const parent = getAgentById(parentId);
+    if (!parent) throw new Error(`Parent agent '${parentId}' not found`);
+    depth = parent.depth + 1;
+  }
+  const now = Date.now();
+  db.prepare(
+    'INSERT INTO agents (agent_id, agent_name, parent_id, depth, status, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+  ).run(agentId, agentName, parentId, depth, 'idle', now);
+  return { agent_id: agentId, agent_name: agentName, parent_id: parentId, depth, status: 'idle', created_at: now };
+}
+
+/** Delete an agent and its entire subtree. Returns all deleted agent IDs. */
+export function deleteAgentSubtree(agentId: string): string[] {
+  const descendants = getDescendants(agentId);
+  const allIds = [...descendants.map((d) => d.agent_id), agentId];
+
+  const deleteIn = db.transaction(() => {
+    for (const id of allIds) {
+      // Clean up related data
+      db.prepare('DELETE FROM daily_token_usage WHERE agent_id = ?').run(id);
+      db.prepare('DELETE FROM activity_feed WHERE agent_id = ?').run(id);
+      db.prepare('DELETE FROM agent_runs WHERE agent_id = ?').run(id);
+      db.prepare('DELETE FROM sharedspace_index_cache WHERE agent_id = ?').run(id);
+      db.prepare('DELETE FROM cross_branch_queue WHERE sender_agent_id = ? OR recipient_agent_id = ?').run(id, id);
+      db.prepare('DELETE FROM hitl_queue WHERE agent_id = ?').run(id);
+      db.prepare('DELETE FROM conversation_messages WHERE agent_id = ?').run(id);
+      db.prepare('DELETE FROM conversations WHERE agent_id = ?').run(id);
+      db.prepare('DELETE FROM inbox_messages WHERE recipient_agent_id = ? OR from_agent_id = ?').run(id, id);
+    }
+    // Delete agents bottom-up to respect FK
+    for (const id of allIds.reverse()) {
+      db.prepare('DELETE FROM agents WHERE agent_id = ?').run(id);
+    }
+  });
+  deleteIn();
+  return allIds;
+}
+
+/** Get ancestry chain from root to this agent (inclusive) */
+export function getAncestryChain(agentId: string): AgentRow[] {
+  const chain: AgentRow[] = [];
+  let current = getAgentById(agentId);
+  while (current) {
+    chain.unshift(current);
+    current = current.parent_id ? getAgentById(current.parent_id) : undefined;
+  }
+  return chain;
+}
+
+/** Get all descendants of an agent (not including the agent itself) */
+export function getDescendants(agentId: string): AgentRow[] {
+  return db
+    .prepare(
+      `WITH RECURSIVE desc AS (
+        SELECT agent_id, agent_name, parent_id, depth, status, created_at
+        FROM agents WHERE parent_id = ?
+        UNION ALL
+        SELECT a.agent_id, a.agent_name, a.parent_id, a.depth, a.status, a.created_at
+        FROM agents a JOIN desc ON a.parent_id = desc.agent_id
+      )
+      SELECT * FROM desc`,
+    )
+    .all(agentId) as AgentRow[];
+}
+
+/** Get direct children of an agent */
+export function getDirectChildren(agentId: string): AgentRow[] {
+  return db
+    .prepare('SELECT * FROM agents WHERE parent_id = ?')
+    .all(agentId) as AgentRow[];
+}
+
+export function updateAgentStatus(agentId: string, status: string): void {
+  db.prepare('UPDATE agents SET status = ? WHERE agent_id = ?').run(
+    status,
+    agentId,
+  );
+}
+
+/** Get the agent_path (display names from top-level to this agent) */
+export function getAgentPath(agentId: string): string[] {
+  return getAncestryChain(agentId).map((a) => a.agent_name);
+}
+
+/** Get the top-level branch agent for a given agent */
+export function getTopLevelBranch(agentId: string): AgentRow | undefined {
+  const chain = getAncestryChain(agentId);
+  return chain.length > 0 ? chain[0] : undefined;
+}
+
+// --- Octopus: Token budget ---
+
+export function getDailyTokenUsage(agentId: string, date?: string): number {
+  const d = date || new Date().toISOString().slice(0, 10);
+  const row = db
+    .prepare('SELECT tokens_used FROM daily_token_usage WHERE agent_id = ? AND date = ?')
+    .get(agentId, d) as { tokens_used: number } | undefined;
+  return row?.tokens_used || 0;
+}
+
+export function addDailyTokenUsage(agentId: string, tokens: number, date?: string): number {
+  const d = date || new Date().toISOString().slice(0, 10);
+  db.prepare(
+    `INSERT INTO daily_token_usage (agent_id, date, tokens_used)
+     VALUES (?, ?, ?)
+     ON CONFLICT(agent_id, date) DO UPDATE SET tokens_used = tokens_used + ?`,
+  ).run(agentId, d, tokens, tokens);
+  return getDailyTokenUsage(agentId, d);
+}
+
+export function resetDailyTokenUsage(agentId: string, date?: string): void {
+  const d = date || new Date().toISOString().slice(0, 10);
+  db.prepare('DELETE FROM daily_token_usage WHERE agent_id = ? AND date = ?').run(agentId, d);
+}
+
+// --- Octopus: Activity feed ---
+
+export interface ActivityEntry {
+  id: number;
+  ts: number;
+  agent_id: string;
+  run_id: string;
+  entry_id: string;
+  entry_type: string;
+  tool_name: string;
+  tool_category: string;
+  detail: string | null;
+  outcome: string | null;
+}
+
+export function appendActivityEntry(entry: Omit<ActivityEntry, 'id'>): number {
+  const result = db
+    .prepare(
+      `INSERT INTO activity_feed (ts, agent_id, run_id, entry_id, entry_type, tool_name, tool_category, detail, outcome)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      entry.ts,
+      entry.agent_id,
+      entry.run_id,
+      entry.entry_id,
+      entry.entry_type,
+      entry.tool_name,
+      entry.tool_category,
+      entry.detail,
+      entry.outcome,
+    );
+  return result.lastInsertRowid as number;
+}
+
+export function getActivityForRun(agentId: string, runId: string): ActivityEntry[] {
+  return db
+    .prepare('SELECT * FROM activity_feed WHERE agent_id = ? AND run_id = ? ORDER BY ts')
+    .all(agentId, runId) as ActivityEntry[];
+}
+
+/** Count actions in a sliding window for circuit breaker */
+export function getActionCountInWindow(agentId: string, windowMs: number): number {
+  const since = Date.now() - windowMs;
+  const row = db
+    .prepare(
+      `SELECT COUNT(*) as cnt FROM activity_feed
+       WHERE agent_id = ? AND ts >= ? AND entry_type = 'tool_call'`,
+    )
+    .get(agentId, since) as { cnt: number };
+  return row.cnt;
+}
+
+// --- Octopus: Agent runs ---
+
+export interface AgentRunRow {
+  run_id: string;
+  agent_id: string;
+  trigger_type: string;
+  trigger_detail: string | null;
+  started_ts: number;
+  completed_ts: number | null;
+  exit_reason: string | null;
+  total_tokens: number;
+  error_detail: string | null;
+}
+
+export function createAgentRun(
+  runId: string,
+  agentId: string,
+  triggerType: string,
+  triggerDetail?: string | null,
+): void {
+  db.prepare(
+    `INSERT INTO agent_runs (run_id, agent_id, trigger_type, trigger_detail, started_ts)
+     VALUES (?, ?, ?, ?, ?)`,
+  ).run(runId, agentId, triggerType, triggerDetail || null, Date.now());
+}
+
+export function completeAgentRun(
+  runId: string,
+  exitReason: string,
+  totalTokens: number,
+  errorDetail?: string | null,
+): void {
+  db.prepare(
+    `UPDATE agent_runs SET completed_ts = ?, exit_reason = ?, total_tokens = ?, error_detail = ?
+     WHERE run_id = ?`,
+  ).run(Date.now(), exitReason, totalTokens, errorDetail || null, runId);
+}
+
+export function getAgentRuns(
+  agentId: string,
+  limit: number = 20,
+  beforeRunId?: string,
+): { runs: AgentRunRow[]; has_more: boolean } {
+  let runs: AgentRunRow[];
+  if (beforeRunId) {
+    const cursor = db
+      .prepare('SELECT started_ts FROM agent_runs WHERE run_id = ?')
+      .get(beforeRunId) as { started_ts: number } | undefined;
+    const ts = cursor?.started_ts || 0;
+    runs = db
+      .prepare(
+        `SELECT * FROM agent_runs WHERE agent_id = ? AND started_ts < ?
+         ORDER BY started_ts DESC LIMIT ?`,
+      )
+      .all(agentId, ts, limit + 1) as AgentRunRow[];
+  } else {
+    runs = db
+      .prepare(
+        'SELECT * FROM agent_runs WHERE agent_id = ? ORDER BY started_ts DESC LIMIT ?',
+      )
+      .all(agentId, limit + 1) as AgentRunRow[];
+  }
+  const has_more = runs.length > limit;
+  if (has_more) runs.pop();
+  return { runs, has_more };
+}
+
+export function getAgentRun(runId: string): AgentRunRow | undefined {
+  return db.prepare('SELECT * FROM agent_runs WHERE run_id = ?').get(runId) as
+    | AgentRunRow
+    | undefined;
+}
+
+// --- Octopus: SharedSpace pages ---
+
+export interface SharedSpacePageRow {
+  page_id: string;
+  title: string;
+  summary: string;
+  owner_agent_id: string;
+  updated_by: string;
+  updated_ts: number;
+  body: string;
+  parent_id: string | null;
+  depth: number;
+}
+
+export function getSharedSpacePage(pageId: string): SharedSpacePageRow | undefined {
+  return db
+    .prepare('SELECT * FROM sharedspace_pages WHERE page_id = ?')
+    .get(pageId) as SharedSpacePageRow | undefined;
+}
+
+export function getAllSharedSpacePages(): SharedSpacePageRow[] {
+  return db
+    .prepare('SELECT * FROM sharedspace_pages ORDER BY depth, page_id')
+    .all() as SharedSpacePageRow[];
+}
+
+export function upsertSharedSpacePage(
+  pageId: string,
+  title: string,
+  summary: string,
+  ownerAgentId: string,
+  updatedBy: string,
+  body: string,
+): { created: boolean } {
+  const existing = getSharedSpacePage(pageId);
+  const now = Date.now();
+
+  // Compute parent_id and depth from page_id
+  const lastSlash = pageId.lastIndexOf('/');
+  const parentId = lastSlash > 0 ? pageId.slice(0, lastSlash) : null;
+  const depth = pageId.split('/').length - 1;
+
+  if (existing) {
+    // Update — owner cannot change
+    db.prepare(
+      `UPDATE sharedspace_pages SET title = ?, summary = ?, updated_by = ?, updated_ts = ?, body = ?
+       WHERE page_id = ?`,
+    ).run(title, summary, updatedBy, now, body, pageId);
+    return { created: false };
+  } else {
+    db.prepare(
+      `INSERT INTO sharedspace_pages (page_id, title, summary, owner_agent_id, updated_by, updated_ts, body, parent_id, depth)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(pageId, title, summary, ownerAgentId, updatedBy, now, body, parentId, depth);
+    return { created: true };
+  }
+}
+
+export function deleteSharedSpacePage(pageId: string): boolean {
+  const result = db.prepare('DELETE FROM sharedspace_pages WHERE page_id = ?').run(pageId);
+  return result.changes > 0;
+}
+
+export function getSharedSpaceChildren(parentId: string): SharedSpacePageRow[] {
+  return db
+    .prepare('SELECT * FROM sharedspace_pages WHERE parent_id = ?')
+    .all(parentId) as SharedSpacePageRow[];
+}
+
+// --- Octopus: SharedSpace index cache ---
+
+export function getCachedSharedSpaceIndex(agentId: string): string | null {
+  const row = db
+    .prepare('SELECT index_text FROM sharedspace_index_cache WHERE agent_id = ?')
+    .get(agentId) as { index_text: string } | undefined;
+  return row?.index_text || null;
+}
+
+export function setCachedSharedSpaceIndex(agentId: string, indexText: string): void {
+  db.prepare(
+    `INSERT INTO sharedspace_index_cache (agent_id, index_text, computed_at)
+     VALUES (?, ?, ?)
+     ON CONFLICT(agent_id) DO UPDATE SET index_text = ?, computed_at = ?`,
+  ).run(agentId, indexText, Date.now(), indexText, Date.now());
+}
+
+export function invalidateSharedSpaceIndex(agentIds: string[]): void {
+  if (agentIds.length === 0) return;
+  const placeholders = agentIds.map(() => '?').join(',');
+  db.prepare(`DELETE FROM sharedspace_index_cache WHERE agent_id IN (${placeholders})`).run(
+    ...agentIds,
+  );
+}
+
+// --- Octopus: Cross-branch queue ---
+
+export interface CrossBranchMessageRow {
+  message_id: string;
+  sender_agent_id: string;
+  recipient_agent_id: string;
+  subject: string;
+  body: string;
+  run_id: string;
+  message_array: string | null;
+  arrived_ts: number;
+  status: string;
+}
+
+export function insertCrossBranchMessage(msg: Omit<CrossBranchMessageRow, 'status'>): void {
+  db.prepare(
+    `INSERT INTO cross_branch_queue (message_id, sender_agent_id, recipient_agent_id, subject, body, run_id, message_array, arrived_ts, status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
+  ).run(
+    msg.message_id,
+    msg.sender_agent_id,
+    msg.recipient_agent_id,
+    msg.subject,
+    msg.body,
+    msg.run_id,
+    msg.message_array,
+    msg.arrived_ts,
+  );
+}
+
+export function getCrossBranchMessage(messageId: string): CrossBranchMessageRow | undefined {
+  return db
+    .prepare('SELECT * FROM cross_branch_queue WHERE message_id = ?')
+    .get(messageId) as CrossBranchMessageRow | undefined;
+}
+
+export function getPendingCrossBranchMessages(): CrossBranchMessageRow[] {
+  return db
+    .prepare("SELECT * FROM cross_branch_queue WHERE status = 'pending' ORDER BY arrived_ts")
+    .all() as CrossBranchMessageRow[];
+}
+
+export function updateCrossBranchMessageStatus(messageId: string, status: string): void {
+  db.prepare('UPDATE cross_branch_queue SET status = ? WHERE message_id = ?').run(
+    status,
+    messageId,
+  );
+}
+
+export function discardCrossBranchMessageArray(messageId: string): void {
+  db.prepare(
+    "UPDATE cross_branch_queue SET message_array = NULL, status = 'dropped' WHERE message_id = ?",
+  ).run(messageId);
+}
+
+// --- Octopus: HITL queue ---
+
+export interface HitlCardRow {
+  card_id: string;
+  card_type: string;
+  agent_id: string;
+  subject: string;
+  context: string;
+  options: string | null;
+  preference: number | null;
+  run_id: string;
+  message_array: string | null;
+  resolution: string | null;
+  selected_option: number | null;
+  note: string | null;
+  created_ts: number;
+  resolved_ts: number | null;
+}
+
+export function insertHitlCard(card: Omit<HitlCardRow, 'resolution' | 'selected_option' | 'note' | 'resolved_ts'>): void {
+  db.prepare(
+    `INSERT INTO hitl_queue (card_id, card_type, agent_id, subject, context, options, preference, run_id, message_array, created_ts)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    card.card_id,
+    card.card_type,
+    card.agent_id,
+    card.subject,
+    card.context,
+    card.options,
+    card.preference,
+    card.run_id,
+    card.message_array,
+    card.created_ts,
+  );
+}
+
+export function getHitlCard(cardId: string): HitlCardRow | undefined {
+  return db.prepare('SELECT * FROM hitl_queue WHERE card_id = ?').get(cardId) as
+    | HitlCardRow
+    | undefined;
+}
+
+export function getOpenHitlCards(): HitlCardRow[] {
+  return db
+    .prepare("SELECT * FROM hitl_queue WHERE resolution IS NULL ORDER BY created_ts DESC")
+    .all() as HitlCardRow[];
+}
+
+export function getOpenHitlCardsForAgent(agentId: string): HitlCardRow[] {
+  return db
+    .prepare("SELECT * FROM hitl_queue WHERE agent_id = ? AND resolution IS NULL")
+    .all(agentId) as HitlCardRow[];
+}
+
+export function resolveHitlCard(
+  cardId: string,
+  resolution: string,
+  selectedOption?: number | null,
+  note?: string | null,
+): void {
+  db.prepare(
+    `UPDATE hitl_queue SET resolution = ?, selected_option = ?, note = ?, resolved_ts = ?
+     WHERE card_id = ?`,
+  ).run(resolution, selectedOption ?? null, note ?? null, Date.now(), cardId);
+}
+
+/** Count open HITL cards for an agent's subtree */
+export function countOpenHitlCardsForSubtree(agentId: string): number {
+  const allIds = [agentId, ...getDescendants(agentId).map((d) => d.agent_id)];
+  const placeholders = allIds.map(() => '?').join(',');
+  const row = db
+    .prepare(
+      `SELECT COUNT(*) as cnt FROM hitl_queue WHERE agent_id IN (${placeholders}) AND resolution IS NULL`,
+    )
+    .get(...allIds) as { cnt: number };
+  return row.cnt;
+}
+
+// --- Octopus: Conversations ---
+
+export interface ConversationRow {
+  conversation_id: string;
+  agent_id: string;
+  started_ts: number;
+  last_message_ts: number | null;
+  active: number;
+}
+
+export interface ConversationMessageRow {
+  message_id: string;
+  conversation_id: string;
+  agent_id: string;
+  role: string;
+  content: string;
+  ts: number;
+  run_id: string | null;
+}
+
+export function createConversation(conversationId: string, agentId: string): ConversationRow {
+  // Archive existing active conversation
+  db.prepare("UPDATE conversations SET active = 0 WHERE agent_id = ? AND active = 1").run(agentId);
+  const now = Date.now();
+  db.prepare(
+    'INSERT INTO conversations (conversation_id, agent_id, started_ts, active) VALUES (?, ?, ?, 1)',
+  ).run(conversationId, agentId, now);
+  return { conversation_id: conversationId, agent_id: agentId, started_ts: now, last_message_ts: null, active: 1 };
+}
+
+export function getConversations(agentId: string): ConversationRow[] {
+  return db
+    .prepare('SELECT * FROM conversations WHERE agent_id = ? ORDER BY started_ts DESC')
+    .all(agentId) as ConversationRow[];
+}
+
+export function getConversation(conversationId: string): ConversationRow | undefined {
+  return db
+    .prepare('SELECT * FROM conversations WHERE conversation_id = ?')
+    .get(conversationId) as ConversationRow | undefined;
+}
+
+export function getActiveConversation(agentId: string): ConversationRow | undefined {
+  return db
+    .prepare("SELECT * FROM conversations WHERE agent_id = ? AND active = 1")
+    .get(agentId) as ConversationRow | undefined;
+}
+
+export function insertConversationMessage(msg: ConversationMessageRow): void {
+  db.prepare(
+    `INSERT INTO conversation_messages (message_id, conversation_id, agent_id, role, content, ts, run_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  ).run(msg.message_id, msg.conversation_id, msg.agent_id, msg.role, msg.content, msg.ts, msg.run_id);
+  db.prepare('UPDATE conversations SET last_message_ts = ? WHERE conversation_id = ?').run(
+    msg.ts,
+    msg.conversation_id,
+  );
+}
+
+export function getConversationMessages(conversationId: string): ConversationMessageRow[] {
+  return db
+    .prepare('SELECT * FROM conversation_messages WHERE conversation_id = ? ORDER BY ts')
+    .all(conversationId) as ConversationMessageRow[];
+}
+
+// --- Octopus: Inbox ---
+
+export interface InboxMessageRow {
+  message_id: string;
+  recipient_agent_id: string;
+  from_agent_id: string;
+  from_agent_name: string;
+  subject: string;
+  body: string;
+  cross_branch: number;
+  delivered_ts: number;
+  read: number;
+}
+
+export function insertInboxMessage(msg: Omit<InboxMessageRow, 'read'>): void {
+  db.prepare(
+    `INSERT INTO inbox_messages (message_id, recipient_agent_id, from_agent_id, from_agent_name, subject, body, cross_branch, delivered_ts, read)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+  ).run(
+    msg.message_id,
+    msg.recipient_agent_id,
+    msg.from_agent_id,
+    msg.from_agent_name,
+    msg.subject,
+    msg.body,
+    msg.cross_branch,
+    msg.delivered_ts,
+  );
+}
+
+export function getUnreadInboxMessages(agentId: string): InboxMessageRow[] {
+  return db
+    .prepare('SELECT * FROM inbox_messages WHERE recipient_agent_id = ? AND read = 0 ORDER BY delivered_ts')
+    .all(agentId) as InboxMessageRow[];
+}
+
+export function markInboxMessagesRead(agentId: string): void {
+  db.prepare('UPDATE inbox_messages SET read = 1 WHERE recipient_agent_id = ? AND read = 0').run(agentId);
+}
+
+/** Expose the raw database for direct queries in other modules */
+export function getDb(): Database.Database {
+  return db;
+}
 
 function migrateJsonState(): void {
   const migrateFile = (filename: string) => {
