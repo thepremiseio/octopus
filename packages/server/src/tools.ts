@@ -21,8 +21,17 @@ import {
   upsertSharedSpacePage,
   type SharedSpacePageRow,
 } from './db.js';
-import { broadcast, checkCircuitBreaker, generateId, getToolCategory } from './container-runner.js';
-import { canRead, canWrite, invalidateIndicesForPageOwner } from './sharedspace.js';
+import {
+  broadcast,
+  checkCircuitBreaker,
+  generateId,
+  getToolCategory,
+} from './container-runner.js';
+import {
+  canRead,
+  canWrite,
+  invalidateIndicesForPageOwner,
+} from './sharedspace.js';
 
 // --- Activity recording ---
 
@@ -105,20 +114,53 @@ export interface ToolResult {
   error?: string;
 }
 
-export function sharedspaceRead(agentId: string, pageId: string, runId: string): ToolResult {
-  const entryId = recordToolCall(agentId, runId, 'sharedspace_read', `id: ${pageId}`);
+export function sharedspaceRead(
+  agentId: string,
+  pageId: string,
+  runId: string,
+): ToolResult {
+  const entryId = recordToolCall(
+    agentId,
+    runId,
+    'sharedspace_read',
+    `id: ${pageId}`,
+  );
 
   const page = getSharedSpacePage(pageId);
   if (!page) {
-    recordToolResult(agentId, runId, entryId, 'sharedspace_read', `id: ${pageId}`, 'Page not found');
+    recordToolResult(
+      agentId,
+      runId,
+      entryId,
+      'sharedspace_read',
+      `id: ${pageId}`,
+      'Page not found',
+    );
     return { success: false, error: `Page '${pageId}' not found` };
   }
   if (!canRead(agentId, page)) {
-    recordToolResult(agentId, runId, entryId, 'sharedspace_read', `id: ${pageId}`, 'Access denied');
-    return { success: false, error: `Access denied: cannot read page '${pageId}'` };
+    recordToolResult(
+      agentId,
+      runId,
+      entryId,
+      'sharedspace_read',
+      `id: ${pageId}`,
+      'Access denied',
+    );
+    return {
+      success: false,
+      error: `Access denied: cannot read page '${pageId}'`,
+    };
   }
 
-  recordToolResult(agentId, runId, entryId, 'sharedspace_read', `id: ${pageId}`, `Page retrieved (${page.body.length} chars)`);
+  recordToolResult(
+    agentId,
+    runId,
+    entryId,
+    'sharedspace_read',
+    `id: ${pageId}`,
+    `Page retrieved (${page.body.length} chars)`,
+  );
 
   // Check circuit breaker
   checkCircuitBreaker(agentId, runId);
@@ -146,14 +188,29 @@ export function sharedspaceWrite(
   },
   runId: string,
 ): ToolResult {
-  const entryId = recordToolCall(agentId, runId, 'sharedspace_write', `id: ${pageId}, title: ${content.title}`);
+  const entryId = recordToolCall(
+    agentId,
+    runId,
+    'sharedspace_write',
+    `id: ${pageId}, title: ${content.title}`,
+  );
 
   const existing = getSharedSpacePage(pageId);
 
   if (existing) {
     if (!canWrite(agentId, existing)) {
-      recordToolResult(agentId, runId, entryId, 'sharedspace_write', `id: ${pageId}`, 'Access denied');
-      return { success: false, error: `Access denied: cannot write page '${pageId}'` };
+      recordToolResult(
+        agentId,
+        runId,
+        entryId,
+        'sharedspace_write',
+        `id: ${pageId}`,
+        'Access denied',
+      );
+      return {
+        success: false,
+        error: `Access denied: cannot write page '${pageId}'`,
+      };
     }
   }
 
@@ -183,14 +240,33 @@ export function sharedspaceWrite(
   });
 
   const outcome = created ? 'Page created' : 'Page updated';
-  recordToolResult(agentId, runId, entryId, 'sharedspace_write', `id: ${pageId}`, outcome);
+  recordToolResult(
+    agentId,
+    runId,
+    entryId,
+    'sharedspace_write',
+    `id: ${pageId}`,
+    outcome,
+  );
   checkCircuitBreaker(agentId, runId);
 
-  return { success: true, data: { page_id: pageId, operation: created ? 'created' : 'updated' } };
+  return {
+    success: true,
+    data: { page_id: pageId, operation: created ? 'created' : 'updated' },
+  };
 }
 
-export function sharedspaceList(agentId: string, runId: string, prefix?: string): ToolResult {
-  const entryId = recordToolCall(agentId, runId, 'sharedspace_list', prefix ? `prefix: ${prefix}` : '(all)');
+export function sharedspaceList(
+  agentId: string,
+  runId: string,
+  prefix?: string,
+): ToolResult {
+  const entryId = recordToolCall(
+    agentId,
+    runId,
+    'sharedspace_list',
+    prefix ? `prefix: ${prefix}` : '(all)',
+  );
 
   const allPages = getAllSharedSpacePages();
   const readable = allPages.filter((p) => canRead(agentId, p));
@@ -198,7 +274,14 @@ export function sharedspaceList(agentId: string, runId: string, prefix?: string)
     ? readable.filter((p) => p.page_id.startsWith(prefix))
     : readable;
 
-  recordToolResult(agentId, runId, entryId, 'sharedspace_list', prefix || '(all)', `${filtered.length} pages`);
+  recordToolResult(
+    agentId,
+    runId,
+    entryId,
+    'sharedspace_list',
+    prefix || '(all)',
+    `${filtered.length} pages`,
+  );
   checkCircuitBreaker(agentId, runId);
 
   return {
@@ -241,7 +324,12 @@ export function sendMessage(
   runId: string,
   messageArray?: string,
 ): SendMessageResult {
-  const entryId = recordToolCall(senderAgentId, runId, 'send_message', `to: ${args.to}, subject: ${args.subject}`);
+  const entryId = recordToolCall(
+    senderAgentId,
+    runId,
+    'send_message',
+    `to: ${args.to}, subject: ${args.subject}`,
+  );
 
   const sender = getAgentById(senderAgentId);
   const recipient = getAgentById(args.to);
@@ -285,7 +373,14 @@ export function sendMessage(
       cross_branch: false,
     });
 
-    recordToolResult(senderAgentId, runId, entryId, 'send_message', `to: ${args.to}`, 'Delivered directly');
+    recordToolResult(
+      senderAgentId,
+      runId,
+      entryId,
+      'send_message',
+      `to: ${args.to}`,
+      'Delivered directly',
+    );
     checkCircuitBreaker(senderAgentId, runId);
     return { delivered: true, queued_for_ceo: false, message_id: messageId };
   } else {
@@ -318,7 +413,14 @@ export function sendMessage(
       run_id: runId,
     });
 
-    recordToolResult(senderAgentId, runId, entryId, 'send_message', `to: ${args.to}`, 'Queued for CEO (cross-branch)');
+    recordToolResult(
+      senderAgentId,
+      runId,
+      entryId,
+      'send_message',
+      `to: ${args.to}`,
+      'Queued for CEO (cross-branch)',
+    );
     return { delivered: false, queued_for_ceo: true, message_id: xbMsgId };
   }
 }
@@ -348,7 +450,12 @@ export function requestHitl(
   runId: string,
   messageArray?: string,
 ): { card_id: string; should_terminate: boolean } {
-  const entryId = recordToolCall(agentId, runId, 'request_hitl', `type: ${args.type}, subject: ${args.subject}`);
+  const entryId = recordToolCall(
+    agentId,
+    runId,
+    'request_hitl',
+    `type: ${args.type}, subject: ${args.subject}`,
+  );
 
   const agent = getAgentById(agentId);
   const cardId = generateId('card');
@@ -364,7 +471,7 @@ export function requestHitl(
     options: args.options ? JSON.stringify(args.options) : null,
     preference: args.preference ?? null,
     run_id: runId,
-    message_array: shouldTerminate ? (messageArray || null) : null,
+    message_array: shouldTerminate ? messageArray || null : null,
     created_ts: Date.now(),
   });
 
@@ -381,7 +488,14 @@ export function requestHitl(
     run_id: runId,
   });
 
-  recordToolResult(agentId, runId, entryId, 'request_hitl', `type: ${args.type}`, `Card ${cardId} created`);
+  recordToolResult(
+    agentId,
+    runId,
+    entryId,
+    'request_hitl',
+    `type: ${args.type}`,
+    `Card ${cardId} created`,
+  );
 
   return { card_id: cardId, should_terminate: shouldTerminate };
 }

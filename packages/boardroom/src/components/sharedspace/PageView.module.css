@@ -1,0 +1,184 @@
+.page {
+  max-width: 720px;
+}
+
+.pagePath {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-body);
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.meta {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-label);
+  color: var(--text-muted);
+  margin-bottom: 16px;
+}
+
+.banner {
+  background: var(--accent-bg);
+  border: 1px solid var(--accent-border);
+  border-radius: 4px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-family: var(--font-sans);
+  font-size: var(--font-size-body);
+  color: var(--accent);
+}
+
+.reloadBtn {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-label);
+  color: var(--accent);
+  border: 1px solid var(--accent-border);
+  padding: 2px 8px;
+  border-radius: 3px;
+}
+
+.reloadBtn:hover {
+  background: var(--accent);
+  color: var(--bg-base);
+}
+
+.body {
+  font-family: var(--font-sans);
+  font-size: var(--font-size-body);
+  color: var(--text-primary);
+  line-height: 1.6;
+}
+
+.body h1, .body h2, .body h3, .body h4 {
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+  margin-top: 16px;
+  margin-bottom: 8px;
+}
+
+.body h1 { font-size: 16px; }
+.body h2 { font-size: 14px; }
+.body h3 { font-size: 13px; }
+
+.body p {
+  margin-bottom: 8px;
+}
+
+.body code {
+  font-family: var(--font-mono);
+  background: var(--bg-surface-2);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 11px;
+}
+
+.body pre {
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border-default);
+  border-radius: 4px;
+  padding: 12px;
+  overflow-x: auto;
+  margin-bottom: 8px;
+}
+
+.body pre code {
+  background: none;
+  padding: 0;
+}
+
+.body ul, .body ol {
+  padding-left: 20px;
+  margin-bottom: 8px;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-default);
+}
+
+.editBtn {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-label);
+  color: var(--text-muted);
+  border: 1px solid var(--border-default);
+  padding: 4px 12px;
+  border-radius: 3px;
+}
+
+.editBtn:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.deleteBtn {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-label);
+  color: var(--red);
+  border: 1px solid var(--red);
+  padding: 4px 12px;
+  border-radius: 3px;
+}
+
+.deleteBtn:hover {
+  background: var(--red);
+  color: var(--bg-base);
+}
+
+.editArea {
+  width: 100%;
+  min-height: 200px;
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border-default);
+  border-radius: 4px;
+  padding: 12px;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-body);
+  color: var(--text-primary);
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.editActions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.saveBtn {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-label);
+  color: var(--green);
+  border: 1px solid var(--green);
+  background: var(--green-bg);
+  padding: 4px 12px;
+  border-radius: 3px;
+}
+
+.saveBtn:hover {
+  background: var(--green);
+  color: var(--bg-base);
+}
+
+.cancelBtn {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-label);
+  color: var(--text-muted);
+  border: 1px solid var(--border-default);
+  padding: 4px 12px;
+  border-radius: 3px;
+}
+
+.cancelBtn:hover {
+  color: var(--text-secondary);
+}
+
+.loading {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-label);
+}

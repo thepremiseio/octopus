@@ -1,0 +1,30 @@
+.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.idle {
+  background: #555;
+}
+
+.active {
+  background: var(--green);
+  box-shadow: 0 0 4px var(--green);
+}
+
+.alert {
+  background: var(--accent);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.circuitBreaker {
+  background: var(--red);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}

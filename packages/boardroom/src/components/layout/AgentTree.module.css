@@ -1,0 +1,91 @@
+.tree {
+  width: var(--tree-width);
+  background: var(--bg-surface-1);
+  border-right: 1px solid var(--border-default);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-label);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.addButton {
+  color: var(--text-muted);
+  font-size: var(--font-size-body);
+}
+
+.addButton:hover {
+  color: var(--accent);
+}
+
+.nodes {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.node {
+  display: flex;
+  align-items: center;
+  padding: 4px 12px;
+  cursor: pointer;
+  gap: 8px;
+  min-height: 28px;
+}
+
+.node:hover {
+  background: var(--bg-surface-2);
+}
+
+.nodeActive {
+  background: var(--bg-surface-3);
+  border-left: 2px solid var(--accent);
+  padding-left: 10px;
+}
+
+.nodeName {
+  font-family: var(--font-sans);
+  font-size: var(--font-size-body);
+  color: var(--text-secondary);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nodeActive .nodeName {
+  color: var(--text-primary);
+}
+
+.nodeRight {
+  flex-shrink: 0;
+}
+
+.costFigure {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-label);
+  color: var(--text-muted);
+}
+
+.footer {
+  border-top: 1px solid var(--border-default);
+  padding: 8px 12px;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-label);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.footer:hover {
+  color: var(--accent);
+}

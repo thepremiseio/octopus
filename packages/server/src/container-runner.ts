@@ -67,7 +67,10 @@ export function setBroadcastFn(fn: BroadcastFn): void {
   broadcastFn = fn;
 }
 
-export function broadcast(type: string, payload: Record<string, unknown>): void {
+export function broadcast(
+  type: string,
+  payload: Record<string, unknown>,
+): void {
   broadcastFn({ v: 1, type, ts: Date.now(), payload });
 }
 
@@ -229,9 +232,11 @@ export function assembleSystemPrompt(agentId: string): string {
     '- **Approvals:** See SharedSpace approval policy for when approval is required.\n';
   boilerplate += '\n## Available Tools\n\n';
   boilerplate += '- `sharedspace_read(id)` — Read a SharedSpace page\n';
-  boilerplate += '- `sharedspace_write(id, content)` — Write a SharedSpace page\n';
+  boilerplate +=
+    '- `sharedspace_write(id, content)` — Write a SharedSpace page\n';
   boilerplate += '- `sharedspace_list(prefix?)` — List SharedSpace pages\n';
-  boilerplate += '- `send_message(to, subject, body)` — Send a message to another agent\n';
+  boilerplate +=
+    '- `send_message(to, subject, body)` — Send a message to another agent\n';
   boilerplate +=
     '- `request_hitl(type, subject, context, options?, preference?)` — Request CEO input\n';
 
@@ -282,9 +287,11 @@ export function generateBoilerplate(agentId: string): string {
     '- **Approvals:** See SharedSpace approval policy for when approval is required.\n';
   boilerplate += '\n## Available Tools\n\n';
   boilerplate += '- `sharedspace_read(id)` — Read a SharedSpace page\n';
-  boilerplate += '- `sharedspace_write(id, content)` — Write a SharedSpace page\n';
+  boilerplate +=
+    '- `sharedspace_write(id, content)` — Write a SharedSpace page\n';
   boilerplate += '- `sharedspace_list(prefix?)` — List SharedSpace pages\n';
-  boilerplate += '- `send_message(to, subject, body)` — Send a message to another agent\n';
+  boilerplate +=
+    '- `send_message(to, subject, body)` — Send a message to another agent\n';
   boilerplate +=
     '- `request_hitl(type, subject, context, options?, preference?)` — Request CEO input\n';
 

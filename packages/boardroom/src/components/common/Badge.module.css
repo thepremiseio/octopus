@@ -1,0 +1,10 @@
+.badge {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-label);
+  background: var(--accent-bg);
+  color: var(--accent);
+  border: 1px solid var(--accent-border);
+  border-radius: 3px;
+  padding: 0 4px;
+  line-height: 1.4;
+}

@@ -838,7 +838,14 @@ export function insertAgent(
   db.prepare(
     'INSERT INTO agents (agent_id, agent_name, parent_id, depth, status, created_at) VALUES (?, ?, ?, ?, ?, ?)',
   ).run(agentId, agentName, parentId, depth, 'idle', now);
-  return { agent_id: agentId, agent_name: agentName, parent_id: parentId, depth, status: 'idle', created_at: now };
+  return {
+    agent_id: agentId,
+    agent_name: agentName,
+    parent_id: parentId,
+    depth,
+    status: 'idle',
+    created_at: now,
+  };
 }
 
 /** Delete an agent and its entire subtree. Returns all deleted agent IDs. */
@@ -852,12 +859,20 @@ export function deleteAgentSubtree(agentId: string): string[] {
       db.prepare('DELETE FROM daily_token_usage WHERE agent_id = ?').run(id);
       db.prepare('DELETE FROM activity_feed WHERE agent_id = ?').run(id);
       db.prepare('DELETE FROM agent_runs WHERE agent_id = ?').run(id);
-      db.prepare('DELETE FROM sharedspace_index_cache WHERE agent_id = ?').run(id);
-      db.prepare('DELETE FROM cross_branch_queue WHERE sender_agent_id = ? OR recipient_agent_id = ?').run(id, id);
+      db.prepare('DELETE FROM sharedspace_index_cache WHERE agent_id = ?').run(
+        id,
+      );
+      db.prepare(
+        'DELETE FROM cross_branch_queue WHERE sender_agent_id = ? OR recipient_agent_id = ?',
+      ).run(id, id);
       db.prepare('DELETE FROM hitl_queue WHERE agent_id = ?').run(id);
-      db.prepare('DELETE FROM conversation_messages WHERE agent_id = ?').run(id);
+      db.prepare('DELETE FROM conversation_messages WHERE agent_id = ?').run(
+        id,
+      );
       db.prepare('DELETE FROM conversations WHERE agent_id = ?').run(id);
-      db.prepare('DELETE FROM inbox_messages WHERE recipient_agent_id = ? OR from_agent_id = ?').run(id, id);
+      db.prepare(
+        'DELETE FROM inbox_messages WHERE recipient_agent_id = ? OR from_agent_id = ?',
+      ).run(id, id);
     }
     // Delete agents bottom-up to respect FK
     for (const id of allIds.reverse()) {
@@ -925,12 +940,18 @@ export function getTopLevelBranch(agentId: string): AgentRow | undefined {
 export function getDailyTokenUsage(agentId: string, date?: string): number {
   const d = date || new Date().toISOString().slice(0, 10);
   const row = db
-    .prepare('SELECT tokens_used FROM daily_token_usage WHERE agent_id = ? AND date = ?')
+    .prepare(
+      'SELECT tokens_used FROM daily_token_usage WHERE agent_id = ? AND date = ?',
+    )
     .get(agentId, d) as { tokens_used: number } | undefined;
   return row?.tokens_used || 0;
 }
 
-export function addDailyTokenUsage(agentId: string, tokens: number, date?: string): number {
+export function addDailyTokenUsage(
+  agentId: string,
+  tokens: number,
+  date?: string,
+): number {
   const d = date || new Date().toISOString().slice(0, 10);
   db.prepare(
     `INSERT INTO daily_token_usage (agent_id, date, tokens_used)
@@ -942,7 +963,9 @@ export function addDailyTokenUsage(agentId: string, tokens: number, date?: strin
 
 export function resetDailyTokenUsage(agentId: string, date?: string): void {
   const d = date || new Date().toISOString().slice(0, 10);
-  db.prepare('DELETE FROM daily_token_usage WHERE agent_id = ? AND date = ?').run(agentId, d);
+  db.prepare(
+    'DELETE FROM daily_token_usage WHERE agent_id = ? AND date = ?',
+  ).run(agentId, d);
 }
 
 // --- Octopus: Activity feed ---
@@ -980,14 +1003,22 @@ export function appendActivityEntry(entry: Omit<ActivityEntry, 'id'>): number {
   return result.lastInsertRowid as number;
 }
 
-export function getActivityForRun(agentId: string, runId: string): ActivityEntry[] {
+export function getActivityForRun(
+  agentId: string,
+  runId: string,
+): ActivityEntry[] {
   return db
-    .prepare('SELECT * FROM activity_feed WHERE agent_id = ? AND run_id = ? ORDER BY ts')
+    .prepare(
+      'SELECT * FROM activity_feed WHERE agent_id = ? AND run_id = ? ORDER BY ts',
+    )
     .all(agentId, runId) as ActivityEntry[];
 }
 
 /** Count actions in a sliding window for circuit breaker */
-export function getActionCountInWindow(agentId: string, windowMs: number): number {
+export function getActionCountInWindow(
+  agentId: string,
+  windowMs: number,
+): number {
   const since = Date.now() - windowMs;
   const row = db
     .prepare(
@@ -1085,7 +1116,9 @@ export interface SharedSpacePageRow {
   depth: number;
 }
 
-export function getSharedSpacePage(pageId: string): SharedSpacePageRow | undefined {
+export function getSharedSpacePage(
+  pageId: string,
+): SharedSpacePageRow | undefined {
   return db
     .prepare('SELECT * FROM sharedspace_pages WHERE page_id = ?')
     .get(pageId) as SharedSpacePageRow | undefined;
@@ -1124,13 +1157,25 @@ export function upsertSharedSpacePage(
     db.prepare(
       `INSERT INTO sharedspace_pages (page_id, title, summary, owner_agent_id, updated_by, updated_ts, body, parent_id, depth)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).run(pageId, title, summary, ownerAgentId, updatedBy, now, body, parentId, depth);
+    ).run(
+      pageId,
+      title,
+      summary,
+      ownerAgentId,
+      updatedBy,
+      now,
+      body,
+      parentId,
+      depth,
+    );
     return { created: true };
   }
 }
 
 export function deleteSharedSpacePage(pageId: string): boolean {
-  const result = db.prepare('DELETE FROM sharedspace_pages WHERE page_id = ?').run(pageId);
+  const result = db
+    .prepare('DELETE FROM sharedspace_pages WHERE page_id = ?')
+    .run(pageId);
   return result.changes > 0;
 }
 
@@ -1144,12 +1189,17 @@ export function getSharedSpaceChildren(parentId: string): SharedSpacePageRow[] {
 
 export function getCachedSharedSpaceIndex(agentId: string): string | null {
   const row = db
-    .prepare('SELECT index_text FROM sharedspace_index_cache WHERE agent_id = ?')
+    .prepare(
+      'SELECT index_text FROM sharedspace_index_cache WHERE agent_id = ?',
+    )
     .get(agentId) as { index_text: string } | undefined;
   return row?.index_text || null;
 }
 
-export function setCachedSharedSpaceIndex(agentId: string, indexText: string): void {
+export function setCachedSharedSpaceIndex(
+  agentId: string,
+  indexText: string,
+): void {
   db.prepare(
     `INSERT INTO sharedspace_index_cache (agent_id, index_text, computed_at)
      VALUES (?, ?, ?)
@@ -1160,9 +1210,9 @@ export function setCachedSharedSpaceIndex(agentId: string, indexText: string): v
 export function invalidateSharedSpaceIndex(agentIds: string[]): void {
   if (agentIds.length === 0) return;
   const placeholders = agentIds.map(() => '?').join(',');
-  db.prepare(`DELETE FROM sharedspace_index_cache WHERE agent_id IN (${placeholders})`).run(
-    ...agentIds,
-  );
+  db.prepare(
+    `DELETE FROM sharedspace_index_cache WHERE agent_id IN (${placeholders})`,
+  ).run(...agentIds);
 }
 
 // --- Octopus: Cross-branch queue ---
@@ -1179,7 +1229,9 @@ export interface CrossBranchMessageRow {
   status: string;
 }
 
-export function insertCrossBranchMessage(msg: Omit<CrossBranchMessageRow, 'status'>): void {
+export function insertCrossBranchMessage(
+  msg: Omit<CrossBranchMessageRow, 'status'>,
+): void {
   db.prepare(
     `INSERT INTO cross_branch_queue (message_id, sender_agent_id, recipient_agent_id, subject, body, run_id, message_array, arrived_ts, status)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
@@ -1195,7 +1247,9 @@ export function insertCrossBranchMessage(msg: Omit<CrossBranchMessageRow, 'statu
   );
 }
 
-export function getCrossBranchMessage(messageId: string): CrossBranchMessageRow | undefined {
+export function getCrossBranchMessage(
+  messageId: string,
+): CrossBranchMessageRow | undefined {
   return db
     .prepare('SELECT * FROM cross_branch_queue WHERE message_id = ?')
     .get(messageId) as CrossBranchMessageRow | undefined;
@@ -1203,15 +1257,19 @@ export function getCrossBranchMessage(messageId: string): CrossBranchMessageRow 
 
 export function getPendingCrossBranchMessages(): CrossBranchMessageRow[] {
   return db
-    .prepare("SELECT * FROM cross_branch_queue WHERE status = 'pending' ORDER BY arrived_ts")
+    .prepare(
+      "SELECT * FROM cross_branch_queue WHERE status = 'pending' ORDER BY arrived_ts",
+    )
     .all() as CrossBranchMessageRow[];
 }
 
-export function updateCrossBranchMessageStatus(messageId: string, status: string): void {
-  db.prepare('UPDATE cross_branch_queue SET status = ? WHERE message_id = ?').run(
-    status,
-    messageId,
-  );
+export function updateCrossBranchMessageStatus(
+  messageId: string,
+  status: string,
+): void {
+  db.prepare(
+    'UPDATE cross_branch_queue SET status = ? WHERE message_id = ?',
+  ).run(status, messageId);
 }
 
 export function discardCrossBranchMessageArray(messageId: string): void {
@@ -1239,7 +1297,12 @@ export interface HitlCardRow {
   resolved_ts: number | null;
 }
 
-export function insertHitlCard(card: Omit<HitlCardRow, 'resolution' | 'selected_option' | 'note' | 'resolved_ts'>): void {
+export function insertHitlCard(
+  card: Omit<
+    HitlCardRow,
+    'resolution' | 'selected_option' | 'note' | 'resolved_ts'
+  >,
+): void {
   db.prepare(
     `INSERT INTO hitl_queue (card_id, card_type, agent_id, subject, context, options, preference, run_id, message_array, created_ts)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -1258,20 +1321,24 @@ export function insertHitlCard(card: Omit<HitlCardRow, 'resolution' | 'selected_
 }
 
 export function getHitlCard(cardId: string): HitlCardRow | undefined {
-  return db.prepare('SELECT * FROM hitl_queue WHERE card_id = ?').get(cardId) as
-    | HitlCardRow
-    | undefined;
+  return db
+    .prepare('SELECT * FROM hitl_queue WHERE card_id = ?')
+    .get(cardId) as HitlCardRow | undefined;
 }
 
 export function getOpenHitlCards(): HitlCardRow[] {
   return db
-    .prepare("SELECT * FROM hitl_queue WHERE resolution IS NULL ORDER BY created_ts DESC")
+    .prepare(
+      'SELECT * FROM hitl_queue WHERE resolution IS NULL ORDER BY created_ts DESC',
+    )
     .all() as HitlCardRow[];
 }
 
 export function getOpenHitlCardsForAgent(agentId: string): HitlCardRow[] {
   return db
-    .prepare("SELECT * FROM hitl_queue WHERE agent_id = ? AND resolution IS NULL")
+    .prepare(
+      'SELECT * FROM hitl_queue WHERE agent_id = ? AND resolution IS NULL',
+    )
     .all(agentId) as HitlCardRow[];
 }
 
@@ -1319,31 +1386,48 @@ export interface ConversationMessageRow {
   run_id: string | null;
 }
 
-export function createConversation(conversationId: string, agentId: string): ConversationRow {
+export function createConversation(
+  conversationId: string,
+  agentId: string,
+): ConversationRow {
   // Archive existing active conversation
-  db.prepare("UPDATE conversations SET active = 0 WHERE agent_id = ? AND active = 1").run(agentId);
+  db.prepare(
+    'UPDATE conversations SET active = 0 WHERE agent_id = ? AND active = 1',
+  ).run(agentId);
   const now = Date.now();
   db.prepare(
     'INSERT INTO conversations (conversation_id, agent_id, started_ts, active) VALUES (?, ?, ?, 1)',
   ).run(conversationId, agentId, now);
-  return { conversation_id: conversationId, agent_id: agentId, started_ts: now, last_message_ts: null, active: 1 };
+  return {
+    conversation_id: conversationId,
+    agent_id: agentId,
+    started_ts: now,
+    last_message_ts: null,
+    active: 1,
+  };
 }
 
 export function getConversations(agentId: string): ConversationRow[] {
   return db
-    .prepare('SELECT * FROM conversations WHERE agent_id = ? ORDER BY started_ts DESC')
+    .prepare(
+      'SELECT * FROM conversations WHERE agent_id = ? ORDER BY started_ts DESC',
+    )
     .all(agentId) as ConversationRow[];
 }
 
-export function getConversation(conversationId: string): ConversationRow | undefined {
+export function getConversation(
+  conversationId: string,
+): ConversationRow | undefined {
   return db
     .prepare('SELECT * FROM conversations WHERE conversation_id = ?')
     .get(conversationId) as ConversationRow | undefined;
 }
 
-export function getActiveConversation(agentId: string): ConversationRow | undefined {
+export function getActiveConversation(
+  agentId: string,
+): ConversationRow | undefined {
   return db
-    .prepare("SELECT * FROM conversations WHERE agent_id = ? AND active = 1")
+    .prepare('SELECT * FROM conversations WHERE agent_id = ? AND active = 1')
     .get(agentId) as ConversationRow | undefined;
 }
 
@@ -1351,16 +1435,27 @@ export function insertConversationMessage(msg: ConversationMessageRow): void {
   db.prepare(
     `INSERT INTO conversation_messages (message_id, conversation_id, agent_id, role, content, ts, run_id)
      VALUES (?, ?, ?, ?, ?, ?, ?)`,
-  ).run(msg.message_id, msg.conversation_id, msg.agent_id, msg.role, msg.content, msg.ts, msg.run_id);
-  db.prepare('UPDATE conversations SET last_message_ts = ? WHERE conversation_id = ?').run(
-    msg.ts,
+  ).run(
+    msg.message_id,
     msg.conversation_id,
+    msg.agent_id,
+    msg.role,
+    msg.content,
+    msg.ts,
+    msg.run_id,
   );
+  db.prepare(
+    'UPDATE conversations SET last_message_ts = ? WHERE conversation_id = ?',
+  ).run(msg.ts, msg.conversation_id);
 }
 
-export function getConversationMessages(conversationId: string): ConversationMessageRow[] {
+export function getConversationMessages(
+  conversationId: string,
+): ConversationMessageRow[] {
   return db
-    .prepare('SELECT * FROM conversation_messages WHERE conversation_id = ? ORDER BY ts')
+    .prepare(
+      'SELECT * FROM conversation_messages WHERE conversation_id = ? ORDER BY ts',
+    )
     .all(conversationId) as ConversationMessageRow[];
 }
 
@@ -1396,12 +1491,16 @@ export function insertInboxMessage(msg: Omit<InboxMessageRow, 'read'>): void {
 
 export function getUnreadInboxMessages(agentId: string): InboxMessageRow[] {
   return db
-    .prepare('SELECT * FROM inbox_messages WHERE recipient_agent_id = ? AND read = 0 ORDER BY delivered_ts')
+    .prepare(
+      'SELECT * FROM inbox_messages WHERE recipient_agent_id = ? AND read = 0 ORDER BY delivered_ts',
+    )
     .all(agentId) as InboxMessageRow[];
 }
 
 export function markInboxMessagesRead(agentId: string): void {
-  db.prepare('UPDATE inbox_messages SET read = 1 WHERE recipient_agent_id = ? AND read = 0').run(agentId);
+  db.prepare(
+    'UPDATE inbox_messages SET read = 1 WHERE recipient_agent_id = ? AND read = 0',
+  ).run(agentId);
 }
 
 /** Expose the raw database for direct queries in other modules */

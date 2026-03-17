@@ -1,0 +1,65 @@
+.tree {
+  padding: 12px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.headerLabel {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-label);
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+
+.addButton {
+  color: var(--text-muted);
+  font-size: var(--font-size-body);
+}
+
+.addButton:hover {
+  color: var(--accent);
+}
+
+.pageRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 4px;
+  cursor: pointer;
+  border-radius: 3px;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-body);
+  color: var(--text-secondary);
+}
+
+.pageRow:hover {
+  background: var(--bg-surface-2);
+}
+
+.pageActive {
+  color: var(--accent);
+}
+
+.pageLabel {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pageOwner {
+  font-size: var(--font-size-label);
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.recentDot {
+  color: var(--accent);
+  font-size: 8px;
+  flex-shrink: 0;
+}

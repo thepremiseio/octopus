@@ -2,6 +2,7 @@
 // Each import triggers the channel module's registerChannel() call.
 
 // dashboard (Octopus Boardroom — replaces whatsapp)
+import './dashboard.js';
 
 // discord
 

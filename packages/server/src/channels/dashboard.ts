@@ -102,7 +102,11 @@ function wsBroadcast(event: OctopusEvent): void {
   }
 }
 
-function wsSendEvent(client: WsClient, type: string, payload: Record<string, unknown>): void {
+function wsSendEvent(
+  client: WsClient,
+  type: string,
+  payload: Record<string, unknown>,
+): void {
   wsSend(client, JSON.stringify({ v: 1, type, ts: Date.now(), payload }));
 }
 
@@ -114,7 +118,9 @@ function handleWsData(client: WsClient, data: Buffer): void {
     // Close frame
     try {
       client.socket.end(Buffer.from([0x88, 0x00]));
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
     clients.delete(client);
   } else if (opcode === 0x0a) {
     // Pong
@@ -139,7 +145,11 @@ async function parseJson(req: http.IncomingMessage): Promise<unknown> {
   return JSON.parse(body);
 }
 
-function sendJson(res: http.ServerResponse, status: number, body: unknown): void {
+function sendJson(
+  res: http.ServerResponse,
+  status: number,
+  body: unknown,
+): void {
   const json = JSON.stringify(body);
   res.writeHead(status, {
     'Content-Type': 'application/json',
@@ -222,8 +232,14 @@ function addRoute(method: string, path: string, handler: RouteHandler): void {
 }
 
 // Special route for wildcard paths (SharedSpace page_id with slashes)
-function addWildcardRoute(method: string, prefix: string, handler: RouteHandler): void {
-  const pattern = new RegExp(`^${prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/(.+)$`);
+function addWildcardRoute(
+  method: string,
+  prefix: string,
+  handler: RouteHandler,
+): void {
+  const pattern = new RegExp(
+    `^${prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/(.+)$`,
+  );
   routes.push({
     method,
     pattern,
@@ -275,7 +291,10 @@ function setupRoutes(): void {
   });
 
   addRoute('POST', '/api/v1/agents', async (req, res) => {
-    const body = (await parseJson(req)) as { agent_name?: string; parent_id?: string | null };
+    const body = (await parseJson(req)) as {
+      agent_name?: string;
+      parent_id?: string | null;
+    };
     if (!body.agent_name) {
       return sendError(res, 400, 'validation_error', 'agent_name is required');
     }
@@ -284,7 +303,12 @@ function setupRoutes(): void {
     if (body.parent_id) {
       const parent = getAgentById(body.parent_id);
       if (!parent) {
-        return sendError(res, 404, 'agent_not_found', `Parent agent '${body.parent_id}' not found`);
+        return sendError(
+          res,
+          404,
+          'agent_not_found',
+          `Parent agent '${body.parent_id}' not found`,
+        );
       }
     }
 
@@ -296,7 +320,12 @@ function setupRoutes(): void {
 
     // Check uniqueness
     if (getAgentById(agentId)) {
-      return sendError(res, 409, 'validation_error', `Agent '${agentId}' already exists`);
+      return sendError(
+        res,
+        409,
+        'validation_error',
+        `Agent '${agentId}' already exists`,
+      );
     }
 
     const agent = insertAgent(agentId, body.agent_name, body.parent_id || null);
@@ -339,7 +368,12 @@ function setupRoutes(): void {
   addRoute('GET', '/api/v1/agents/{agent_id}', async (_req, res, params) => {
     const agent = getAgentById(params.agent_id);
     if (!agent) {
-      return sendError(res, 404, 'agent_not_found', `No agent with id '${params.agent_id}'`);
+      return sendError(
+        res,
+        404,
+        'agent_not_found',
+        `No agent with id '${params.agent_id}'`,
+      );
     }
     const runs = getAgentRuns(agent.agent_id, 1);
     const lastRun = runs.runs[0];
@@ -363,10 +397,20 @@ function setupRoutes(): void {
   addRoute('DELETE', '/api/v1/agents/{agent_id}', async (_req, res, params) => {
     const agent = getAgentById(params.agent_id);
     if (!agent) {
-      return sendError(res, 404, 'agent_not_found', `No agent with id '${params.agent_id}'`);
+      return sendError(
+        res,
+        404,
+        'agent_not_found',
+        `No agent with id '${params.agent_id}'`,
+      );
     }
     if (agent.status === 'active') {
-      return sendError(res, 409, 'agent_active', `Agent '${params.agent_id}' is currently running`);
+      return sendError(
+        res,
+        409,
+        'agent_active',
+        `Agent '${params.agent_id}' is currently running`,
+      );
     }
     // Check for paused invocations
     const openCards = getOpenHitlCards().filter(
@@ -392,76 +436,112 @@ function setupRoutes(): void {
     sendNoContent(res);
   });
 
-  addRoute('GET', '/api/v1/agents/{agent_id}/claude-md', async (_req, res, params) => {
-    const agent = getAgentById(params.agent_id);
-    if (!agent) {
-      return sendError(res, 404, 'agent_not_found', `No agent with id '${params.agent_id}'`);
-    }
-    const fs = await import('fs');
-    const path = await import('path');
-    const { GROUPS_DIR } = await import('../config.js');
-    const claudeMdPath = path.join(GROUPS_DIR, params.agent_id, 'CLAUDE.md');
-    let content = '';
-    if (fs.existsSync(claudeMdPath)) {
-      content = fs.readFileSync(claudeMdPath, 'utf-8');
-    }
-    sendJson(res, 200, { agent_id: params.agent_id, content });
-  });
+  addRoute(
+    'GET',
+    '/api/v1/agents/{agent_id}/claude-md',
+    async (_req, res, params) => {
+      const agent = getAgentById(params.agent_id);
+      if (!agent) {
+        return sendError(
+          res,
+          404,
+          'agent_not_found',
+          `No agent with id '${params.agent_id}'`,
+        );
+      }
+      const fs = await import('fs');
+      const path = await import('path');
+      const { GROUPS_DIR } = await import('../config.js');
+      const claudeMdPath = path.join(GROUPS_DIR, params.agent_id, 'CLAUDE.md');
+      let content = '';
+      if (fs.existsSync(claudeMdPath)) {
+        content = fs.readFileSync(claudeMdPath, 'utf-8');
+      }
+      sendJson(res, 200, { agent_id: params.agent_id, content });
+    },
+  );
 
-  addRoute('PUT', '/api/v1/agents/{agent_id}/claude-md', async (req, res, params) => {
-    const agent = getAgentById(params.agent_id);
-    if (!agent) {
-      return sendError(res, 404, 'agent_not_found', `No agent with id '${params.agent_id}'`);
-    }
-    const body = (await parseJson(req)) as { content?: string };
-    if (body.content === undefined) {
-      return sendError(res, 400, 'validation_error', 'content is required');
-    }
-    const fs = await import('fs');
-    const path = await import('path');
-    const { GROUPS_DIR } = await import('../config.js');
-    const agentDir = path.join(GROUPS_DIR, params.agent_id);
-    fs.mkdirSync(agentDir, { recursive: true });
-    fs.writeFileSync(path.join(agentDir, 'CLAUDE.md'), body.content);
-    sendJson(res, 200, { agent_id: params.agent_id, content: body.content });
-  });
+  addRoute(
+    'PUT',
+    '/api/v1/agents/{agent_id}/claude-md',
+    async (req, res, params) => {
+      const agent = getAgentById(params.agent_id);
+      if (!agent) {
+        return sendError(
+          res,
+          404,
+          'agent_not_found',
+          `No agent with id '${params.agent_id}'`,
+        );
+      }
+      const body = (await parseJson(req)) as { content?: string };
+      if (body.content === undefined) {
+        return sendError(res, 400, 'validation_error', 'content is required');
+      }
+      const fs = await import('fs');
+      const path = await import('path');
+      const { GROUPS_DIR } = await import('../config.js');
+      const agentDir = path.join(GROUPS_DIR, params.agent_id);
+      fs.mkdirSync(agentDir, { recursive: true });
+      fs.writeFileSync(path.join(agentDir, 'CLAUDE.md'), body.content);
+      sendJson(res, 200, { agent_id: params.agent_id, content: body.content });
+    },
+  );
 
-  addRoute('GET', '/api/v1/agents/{agent_id}/boilerplate', async (_req, res, params) => {
-    const agent = getAgentById(params.agent_id);
-    if (!agent) {
-      return sendError(res, 404, 'agent_not_found', `No agent with id '${params.agent_id}'`);
-    }
-    sendJson(res, 200, {
-      agent_id: params.agent_id,
-      content: generateBoilerplate(params.agent_id),
-    });
-  });
+  addRoute(
+    'GET',
+    '/api/v1/agents/{agent_id}/boilerplate',
+    async (_req, res, params) => {
+      const agent = getAgentById(params.agent_id);
+      if (!agent) {
+        return sendError(
+          res,
+          404,
+          'agent_not_found',
+          `No agent with id '${params.agent_id}'`,
+        );
+      }
+      sendJson(res, 200, {
+        agent_id: params.agent_id,
+        content: generateBoilerplate(params.agent_id),
+      });
+    },
+  );
 
   // --- Runs and Activity ---
 
-  addRoute('GET', '/api/v1/agents/{agent_id}/runs', async (req, res, params) => {
-    const agent = getAgentById(params.agent_id);
-    if (!agent) {
-      return sendError(res, 404, 'agent_not_found', `No agent with id '${params.agent_id}'`);
-    }
-    const url = new URL(req.url || '/', `http://localhost`);
-    const limit = parseInt(url.searchParams.get('limit') || '20', 10);
-    const before = url.searchParams.get('before') || undefined;
-    const { runs, has_more } = getAgentRuns(params.agent_id, limit, before);
-    sendJson(res, 200, {
-      agent_id: params.agent_id,
-      runs: runs.map((r) => ({
-        run_id: r.run_id,
-        trigger_type: r.trigger_type,
-        trigger_detail: r.trigger_detail,
-        started_ts: r.started_ts,
-        completed_ts: r.completed_ts,
-        exit_reason: r.exit_reason,
-        total_tokens: r.total_tokens,
-      })),
-      has_more,
-    });
-  });
+  addRoute(
+    'GET',
+    '/api/v1/agents/{agent_id}/runs',
+    async (req, res, params) => {
+      const agent = getAgentById(params.agent_id);
+      if (!agent) {
+        return sendError(
+          res,
+          404,
+          'agent_not_found',
+          `No agent with id '${params.agent_id}'`,
+        );
+      }
+      const url = new URL(req.url || '/', `http://localhost`);
+      const limit = parseInt(url.searchParams.get('limit') || '20', 10);
+      const before = url.searchParams.get('before') || undefined;
+      const { runs, has_more } = getAgentRuns(params.agent_id, limit, before);
+      sendJson(res, 200, {
+        agent_id: params.agent_id,
+        runs: runs.map((r) => ({
+          run_id: r.run_id,
+          trigger_type: r.trigger_type,
+          trigger_detail: r.trigger_detail,
+          started_ts: r.started_ts,
+          completed_ts: r.completed_ts,
+          exit_reason: r.exit_reason,
+          total_tokens: r.total_tokens,
+        })),
+        has_more,
+      });
+    },
+  );
 
   addRoute(
     'GET',
@@ -469,11 +549,21 @@ function setupRoutes(): void {
     async (_req, res, params) => {
       const agent = getAgentById(params.agent_id);
       if (!agent) {
-        return sendError(res, 404, 'agent_not_found', `No agent with id '${params.agent_id}'`);
+        return sendError(
+          res,
+          404,
+          'agent_not_found',
+          `No agent with id '${params.agent_id}'`,
+        );
       }
       const run = getAgentRun(params.run_id);
       if (!run || run.agent_id !== params.agent_id) {
-        return sendError(res, 404, 'agent_not_found', `Run '${params.run_id}' not found`);
+        return sendError(
+          res,
+          404,
+          'agent_not_found',
+          `Run '${params.run_id}' not found`,
+        );
       }
       const entries = getActivityForRun(params.agent_id, params.run_id);
       sendJson(res, 200, {
@@ -495,43 +585,66 @@ function setupRoutes(): void {
 
   // --- Scheduled tasks ---
 
-  addRoute('GET', '/api/v1/agents/{agent_id}/schedules', async (_req, res, params) => {
-    const agent = getAgentById(params.agent_id);
-    if (!agent) {
-      return sendError(res, 404, 'agent_not_found', `No agent with id '${params.agent_id}'`);
-    }
-    // Schedules will be mapped from the existing scheduled_tasks table
-    sendJson(res, 200, { agent_id: params.agent_id, schedules: [] });
-  });
+  addRoute(
+    'GET',
+    '/api/v1/agents/{agent_id}/schedules',
+    async (_req, res, params) => {
+      const agent = getAgentById(params.agent_id);
+      if (!agent) {
+        return sendError(
+          res,
+          404,
+          'agent_not_found',
+          `No agent with id '${params.agent_id}'`,
+        );
+      }
+      // Schedules will be mapped from the existing scheduled_tasks table
+      sendJson(res, 200, { agent_id: params.agent_id, schedules: [] });
+    },
+  );
 
-  addRoute('POST', '/api/v1/agents/{agent_id}/schedules', async (req, res, params) => {
-    const agent = getAgentById(params.agent_id);
-    if (!agent) {
-      return sendError(res, 404, 'agent_not_found', `No agent with id '${params.agent_id}'`);
-    }
-    const body = (await parseJson(req)) as { cron?: string; name?: string };
-    if (!body.cron || !body.name) {
-      return sendError(res, 400, 'validation_error', 'cron and name are required');
-    }
-    // Validate cron expression
-    try {
-      const { CronExpressionParser } = await import('cron-parser');
-      const interval = CronExpressionParser.parse(body.cron);
-      const nextRun = interval.next().toDate();
-      const scheduleId = generateId('sched');
-      sendJson(res, 201, {
-        schedule_id: scheduleId,
-        agent_id: params.agent_id,
-        cron: body.cron,
-        name: body.name,
-        enabled: true,
-        last_run_ts: null,
-        next_run_ts: nextRun.getTime(),
-      });
-    } catch {
-      return sendError(res, 422, 'invalid_cron', 'Invalid cron expression');
-    }
-  });
+  addRoute(
+    'POST',
+    '/api/v1/agents/{agent_id}/schedules',
+    async (req, res, params) => {
+      const agent = getAgentById(params.agent_id);
+      if (!agent) {
+        return sendError(
+          res,
+          404,
+          'agent_not_found',
+          `No agent with id '${params.agent_id}'`,
+        );
+      }
+      const body = (await parseJson(req)) as { cron?: string; name?: string };
+      if (!body.cron || !body.name) {
+        return sendError(
+          res,
+          400,
+          'validation_error',
+          'cron and name are required',
+        );
+      }
+      // Validate cron expression
+      try {
+        const { CronExpressionParser } = await import('cron-parser');
+        const interval = CronExpressionParser.parse(body.cron);
+        const nextRun = interval.next().toDate();
+        const scheduleId = generateId('sched');
+        sendJson(res, 201, {
+          schedule_id: scheduleId,
+          agent_id: params.agent_id,
+          cron: body.cron,
+          name: body.name,
+          enabled: true,
+          last_run_ts: null,
+          next_run_ts: nextRun.getTime(),
+        });
+      } catch {
+        return sendError(res, 422, 'invalid_cron', 'Invalid cron expression');
+      }
+    },
+  );
 
   addRoute(
     'DELETE',
@@ -539,7 +652,12 @@ function setupRoutes(): void {
     async (_req, res, params) => {
       const agent = getAgentById(params.agent_id);
       if (!agent) {
-        return sendError(res, 404, 'agent_not_found', `No agent with id '${params.agent_id}'`);
+        return sendError(
+          res,
+          404,
+          'agent_not_found',
+          `No agent with id '${params.agent_id}'`,
+        );
       }
       // TODO: lookup schedule by schedule_id mapped to agent
       sendNoContent(res);
@@ -548,81 +666,110 @@ function setupRoutes(): void {
 
   // --- Budget ---
 
-  addRoute('POST', '/api/v1/agents/{agent_id}/budget/reset', async (_req, res, params) => {
-    const agent = getAgentById(params.agent_id);
-    if (!agent) {
-      return sendError(res, 404, 'agent_not_found', `No agent with id '${params.agent_id}'`);
-    }
-    const previousUsed = getDailyTokenUsage(params.agent_id);
-    resetDailyTokenUsage(params.agent_id);
+  addRoute(
+    'POST',
+    '/api/v1/agents/{agent_id}/budget/reset',
+    async (_req, res, params) => {
+      const agent = getAgentById(params.agent_id);
+      if (!agent) {
+        return sendError(
+          res,
+          404,
+          'agent_not_found',
+          `No agent with id '${params.agent_id}'`,
+        );
+      }
+      const previousUsed = getDailyTokenUsage(params.agent_id);
+      resetDailyTokenUsage(params.agent_id);
 
-    const previousStatus = agent.status;
-    if (previousStatus === 'alert') {
-      updateAgentStatus(params.agent_id, 'idle');
-    }
+      const previousStatus = agent.status;
+      if (previousStatus === 'alert') {
+        updateAgentStatus(params.agent_id, 'idle');
+      }
 
-    broadcast('agent.budget.reset', {
-      agent_id: params.agent_id,
-      reset_by: 'ceo',
-      previous_used_tokens: previousUsed,
-      budget_tokens: 0, // TODO: parse from CLAUDE.md
-    });
-
-    if (previousStatus === 'alert') {
-      broadcast('agent.status.changed', {
+      broadcast('agent.budget.reset', {
         agent_id: params.agent_id,
-        status: 'idle',
-        previous_status: previousStatus,
+        reset_by: 'ceo',
+        previous_used_tokens: previousUsed,
+        budget_tokens: 0, // TODO: parse from CLAUDE.md
       });
-    }
 
-    sendJson(res, 200, {
-      agent_id: params.agent_id,
-      budget_tokens: 0,
-      used_tokens: 0,
-    });
-  });
+      if (previousStatus === 'alert') {
+        broadcast('agent.status.changed', {
+          agent_id: params.agent_id,
+          status: 'idle',
+          previous_status: previousStatus,
+        });
+      }
+
+      sendJson(res, 200, {
+        agent_id: params.agent_id,
+        budget_tokens: 0,
+        used_tokens: 0,
+      });
+    },
+  );
 
   // --- Conversations ---
 
-  addRoute('GET', '/api/v1/agents/{agent_id}/conversations', async (_req, res, params) => {
-    const agent = getAgentById(params.agent_id);
-    if (!agent) {
-      return sendError(res, 404, 'agent_not_found', `No agent with id '${params.agent_id}'`);
-    }
-    const convs = getConversations(params.agent_id);
-    sendJson(res, 200, {
-      agent_id: params.agent_id,
-      conversations: convs.map((c) => {
-        const msgs = getConversationMessages(c.conversation_id);
-        const lastAgentMsg = [...msgs].reverse().find((m) => m.role === 'agent');
-        return {
-          conversation_id: c.conversation_id,
-          started_ts: c.started_ts,
-          last_message_ts: c.last_message_ts,
-          preview: lastAgentMsg ? lastAgentMsg.content.slice(0, 80) : null,
-          message_count: msgs.length,
-          active: c.active === 1,
-        };
-      }),
-    });
-  });
+  addRoute(
+    'GET',
+    '/api/v1/agents/{agent_id}/conversations',
+    async (_req, res, params) => {
+      const agent = getAgentById(params.agent_id);
+      if (!agent) {
+        return sendError(
+          res,
+          404,
+          'agent_not_found',
+          `No agent with id '${params.agent_id}'`,
+        );
+      }
+      const convs = getConversations(params.agent_id);
+      sendJson(res, 200, {
+        agent_id: params.agent_id,
+        conversations: convs.map((c) => {
+          const msgs = getConversationMessages(c.conversation_id);
+          const lastAgentMsg = [...msgs]
+            .reverse()
+            .find((m) => m.role === 'agent');
+          return {
+            conversation_id: c.conversation_id,
+            started_ts: c.started_ts,
+            last_message_ts: c.last_message_ts,
+            preview: lastAgentMsg ? lastAgentMsg.content.slice(0, 80) : null,
+            message_count: msgs.length,
+            active: c.active === 1,
+          };
+        }),
+      });
+    },
+  );
 
-  addRoute('POST', '/api/v1/agents/{agent_id}/conversations', async (_req, res, params) => {
-    const agent = getAgentById(params.agent_id);
-    if (!agent) {
-      return sendError(res, 404, 'agent_not_found', `No agent with id '${params.agent_id}'`);
-    }
-    const convId = generateId('conv');
-    const conv = createConversation(convId, params.agent_id);
-    sendJson(res, 201, {
-      conversation_id: convId,
-      agent_id: params.agent_id,
-      started_ts: conv.started_ts,
-      active: true,
-      messages: [],
-    });
-  });
+  addRoute(
+    'POST',
+    '/api/v1/agents/{agent_id}/conversations',
+    async (_req, res, params) => {
+      const agent = getAgentById(params.agent_id);
+      if (!agent) {
+        return sendError(
+          res,
+          404,
+          'agent_not_found',
+          `No agent with id '${params.agent_id}'`,
+        );
+      }
+      const convId = generateId('conv');
+      const conv = createConversation(convId, params.agent_id);
+      sendJson(res, 201, {
+        conversation_id: convId,
+        agent_id: params.agent_id,
+        started_ts: conv.started_ts,
+        active: true,
+        messages: [],
+      });
+    },
+  );
 
   addRoute(
     'GET',
@@ -630,7 +777,12 @@ function setupRoutes(): void {
     async (_req, res, params) => {
       const agent = getAgentById(params.agent_id);
       if (!agent) {
-        return sendError(res, 404, 'agent_not_found', `No agent with id '${params.agent_id}'`);
+        return sendError(
+          res,
+          404,
+          'agent_not_found',
+          `No agent with id '${params.agent_id}'`,
+        );
       }
       const conv = getConversation(params.conversation_id);
       if (!conv || conv.agent_id !== params.agent_id) {
@@ -664,7 +816,12 @@ function setupRoutes(): void {
     async (req, res, params) => {
       const agent = getAgentById(params.agent_id);
       if (!agent) {
-        return sendError(res, 404, 'agent_not_found', `No agent with id '${params.agent_id}'`);
+        return sendError(
+          res,
+          404,
+          'agent_not_found',
+          `No agent with id '${params.agent_id}'`,
+        );
       }
       const conv = getConversation(params.conversation_id);
       if (!conv || conv.agent_id !== params.agent_id) {
@@ -676,7 +833,12 @@ function setupRoutes(): void {
         );
       }
       if (conv.active !== 1) {
-        return sendError(res, 409, 'validation_error', 'Conversation is archived');
+        return sendError(
+          res,
+          409,
+          'validation_error',
+          'Conversation is archived',
+        );
       }
       if (agent.status !== 'idle') {
         return sendError(
@@ -728,88 +890,130 @@ function setupRoutes(): void {
   addRoute('GET', '/api/v1/hitl/{card_id}', async (_req, res, params) => {
     const card = getHitlCard(params.card_id);
     if (!card) {
-      return sendError(res, 404, 'card_not_found', `Card '${params.card_id}' not found`);
+      return sendError(
+        res,
+        404,
+        'card_not_found',
+        `Card '${params.card_id}' not found`,
+      );
     }
     sendJson(res, 200, formatHitlCard(card));
   });
 
-  addRoute('POST', '/api/v1/hitl/{card_id}/decision', async (req, res, params) => {
-    const card = getHitlCard(params.card_id);
-    if (!card) {
-      return sendError(res, 404, 'card_not_found', `Card '${params.card_id}' not found`);
-    }
-    if (card.resolution) {
-      return sendError(
-        res,
-        409,
-        'card_already_resolved',
-        `Card '${params.card_id}' has already been resolved`,
+  addRoute(
+    'POST',
+    '/api/v1/hitl/{card_id}/decision',
+    async (req, res, params) => {
+      const card = getHitlCard(params.card_id);
+      if (!card) {
+        return sendError(
+          res,
+          404,
+          'card_not_found',
+          `Card '${params.card_id}' not found`,
+        );
+      }
+      if (card.resolution) {
+        return sendError(
+          res,
+          409,
+          'card_already_resolved',
+          `Card '${params.card_id}' has already been resolved`,
+        );
+      }
+
+      const body = (await parseJson(req)) as {
+        resolution?: string;
+        selected_option?: number;
+        note?: string;
+      };
+      if (!body.resolution) {
+        return sendError(
+          res,
+          400,
+          'validation_error',
+          'resolution is required',
+        );
+      }
+
+      // Validate resolution against card type
+      const validResolutions = getValidResolutions(card.card_type);
+      if (!validResolutions.includes(body.resolution)) {
+        return sendError(
+          res,
+          400,
+          'invalid_resolution',
+          `Invalid resolution '${body.resolution}' for card type '${card.card_type}'`,
+        );
+      }
+
+      if (
+        body.resolution === 'option_selected' &&
+        body.selected_option === undefined
+      ) {
+        return sendError(
+          res,
+          400,
+          'validation_error',
+          'selected_option is required for option_selected',
+        );
+      }
+      if (body.resolution === 'returned' && !body.note) {
+        return sendError(
+          res,
+          400,
+          'validation_error',
+          'note is required for returned resolution',
+        );
+      }
+
+      resolveHitlCard(
+        params.card_id,
+        body.resolution,
+        body.selected_option,
+        body.note,
       );
-    }
 
-    const body = (await parseJson(req)) as {
-      resolution?: string;
-      selected_option?: number;
-      note?: string;
-    };
-    if (!body.resolution) {
-      return sendError(res, 400, 'validation_error', 'resolution is required');
-    }
-
-    // Validate resolution against card type
-    const validResolutions = getValidResolutions(card.card_type);
-    if (!validResolutions.includes(body.resolution)) {
-      return sendError(
-        res,
-        400,
-        'invalid_resolution',
-        `Invalid resolution '${body.resolution}' for card type '${card.card_type}'`,
-      );
-    }
-
-    if (body.resolution === 'option_selected' && body.selected_option === undefined) {
-      return sendError(res, 400, 'validation_error', 'selected_option is required for option_selected');
-    }
-    if (body.resolution === 'returned' && !body.note) {
-      return sendError(res, 400, 'validation_error', 'note is required for returned resolution');
-    }
-
-    resolveHitlCard(params.card_id, body.resolution, body.selected_option, body.note);
-
-    const agent = getAgentById(card.agent_id);
-    broadcast('hitl.card.resolved', {
-      card_id: params.card_id,
-      agent_id: card.agent_id,
-      resolution: body.resolution,
-      selected_option: body.selected_option ?? null,
-      note: body.note ?? null,
-    });
-
-    // For non-rejected resolutions with message arrays, resume the agent
-    if (body.resolution !== 'rejected' && card.message_array) {
-      // Resume path: rehydrate and start fresh container
-      // This is handled by the runner integration
-      const runId = generateId('run');
-      createAgentRun(runId, card.agent_id, 'hitl_resume', `Resumed after ${body.resolution}`);
-      updateAgentStatus(card.agent_id, 'active');
-      broadcast('agent.status.changed', {
+      const agent = getAgentById(card.agent_id);
+      broadcast('hitl.card.resolved', {
+        card_id: params.card_id,
         agent_id: card.agent_id,
-        status: 'active',
-        previous_status: 'idle',
+        resolution: body.resolution,
+        selected_option: body.selected_option ?? null,
+        note: body.note ?? null,
       });
-      broadcast('agent.run.started', {
-        agent_id: card.agent_id,
-        run_id: runId,
-        trigger_type: 'hitl_resume',
-        trigger_detail: `Resumed after ${body.resolution}`,
-      });
-    }
 
-    sendJson(res, 200, {
-      card_id: params.card_id,
-      resolution: body.resolution,
-    });
-  });
+      // For non-rejected resolutions with message arrays, resume the agent
+      if (body.resolution !== 'rejected' && card.message_array) {
+        // Resume path: rehydrate and start fresh container
+        // This is handled by the runner integration
+        const runId = generateId('run');
+        createAgentRun(
+          runId,
+          card.agent_id,
+          'hitl_resume',
+          `Resumed after ${body.resolution}`,
+        );
+        updateAgentStatus(card.agent_id, 'active');
+        broadcast('agent.status.changed', {
+          agent_id: card.agent_id,
+          status: 'active',
+          previous_status: 'idle',
+        });
+        broadcast('agent.run.started', {
+          agent_id: card.agent_id,
+          run_id: runId,
+          trigger_type: 'hitl_resume',
+          trigger_detail: `Resumed after ${body.resolution}`,
+        });
+      }
+
+      sendJson(res, 200, {
+        card_id: params.card_id,
+        resolution: body.resolution,
+      });
+    },
+  );
 
   // --- Cross-branch Queue ---
 
@@ -836,79 +1040,107 @@ function setupRoutes(): void {
     });
   });
 
-  addRoute('POST', '/api/v1/crossbranch/{message_id}/release', async (_req, res, params) => {
-    const msg = getCrossBranchMessage(params.message_id);
-    if (!msg) {
-      return sendError(res, 404, 'message_not_found', `Message '${params.message_id}' not found`);
-    }
-    if (msg.status !== 'pending') {
-      return sendError(res, 409, 'validation_error', 'Message already processed');
-    }
+  addRoute(
+    'POST',
+    '/api/v1/crossbranch/{message_id}/release',
+    async (_req, res, params) => {
+      const msg = getCrossBranchMessage(params.message_id);
+      if (!msg) {
+        return sendError(
+          res,
+          404,
+          'message_not_found',
+          `Message '${params.message_id}' not found`,
+        );
+      }
+      if (msg.status !== 'pending') {
+        return sendError(
+          res,
+          409,
+          'validation_error',
+          'Message already processed',
+        );
+      }
 
-    updateCrossBranchMessageStatus(params.message_id, 'released');
+      updateCrossBranchMessageStatus(params.message_id, 'released');
 
-    const recipient = getAgentById(msg.recipient_agent_id);
-    const sender = getAgentById(msg.sender_agent_id);
+      const recipient = getAgentById(msg.recipient_agent_id);
+      const sender = getAgentById(msg.sender_agent_id);
 
-    // Deliver to recipient inbox
-    insertInboxMessage({
-      message_id: params.message_id,
-      recipient_agent_id: msg.recipient_agent_id,
-      from_agent_id: msg.sender_agent_id,
-      from_agent_name: sender?.agent_name || msg.sender_agent_id,
-      subject: msg.subject,
-      body: msg.body,
-      cross_branch: 1,
-      delivered_ts: Date.now(),
-    });
-
-    broadcast('crossbranch.message.released', {
-      message_id: params.message_id,
-      to_agent_id: msg.recipient_agent_id,
-    });
-
-    broadcast('inbox.message.delivered', {
-      recipient_agent_id: msg.recipient_agent_id,
-      message_id: params.message_id,
-      from_agent_id: msg.sender_agent_id,
-      from_agent_name: sender?.agent_name || msg.sender_agent_id,
-      subject: msg.subject,
-      cross_branch: true,
-    });
-
-    // Resume sender
-    if (msg.message_array) {
-      const runId = generateId('run');
-      createAgentRun(runId, msg.sender_agent_id, 'crossbranch_resume');
-      broadcast('agent.run.started', {
-        agent_id: msg.sender_agent_id,
-        run_id: runId,
-        trigger_type: 'crossbranch_resume',
-        trigger_detail: null,
+      // Deliver to recipient inbox
+      insertInboxMessage({
+        message_id: params.message_id,
+        recipient_agent_id: msg.recipient_agent_id,
+        from_agent_id: msg.sender_agent_id,
+        from_agent_name: sender?.agent_name || msg.sender_agent_id,
+        subject: msg.subject,
+        body: msg.body,
+        cross_branch: 1,
+        delivered_ts: Date.now(),
       });
-    }
 
-    sendNoContent(res);
-  });
+      broadcast('crossbranch.message.released', {
+        message_id: params.message_id,
+        to_agent_id: msg.recipient_agent_id,
+      });
 
-  addRoute('POST', '/api/v1/crossbranch/{message_id}/drop', async (_req, res, params) => {
-    const msg = getCrossBranchMessage(params.message_id);
-    if (!msg) {
-      return sendError(res, 404, 'message_not_found', `Message '${params.message_id}' not found`);
-    }
-    if (msg.status !== 'pending') {
-      return sendError(res, 409, 'validation_error', 'Message already processed');
-    }
+      broadcast('inbox.message.delivered', {
+        recipient_agent_id: msg.recipient_agent_id,
+        message_id: params.message_id,
+        from_agent_id: msg.sender_agent_id,
+        from_agent_name: sender?.agent_name || msg.sender_agent_id,
+        subject: msg.subject,
+        cross_branch: true,
+      });
 
-    discardCrossBranchMessageArray(params.message_id);
+      // Resume sender
+      if (msg.message_array) {
+        const runId = generateId('run');
+        createAgentRun(runId, msg.sender_agent_id, 'crossbranch_resume');
+        broadcast('agent.run.started', {
+          agent_id: msg.sender_agent_id,
+          run_id: runId,
+          trigger_type: 'crossbranch_resume',
+          trigger_detail: null,
+        });
+      }
 
-    broadcast('crossbranch.message.dropped', {
-      message_id: params.message_id,
-      from_agent_id: msg.sender_agent_id,
-    });
+      sendNoContent(res);
+    },
+  );
 
-    sendNoContent(res);
-  });
+  addRoute(
+    'POST',
+    '/api/v1/crossbranch/{message_id}/drop',
+    async (_req, res, params) => {
+      const msg = getCrossBranchMessage(params.message_id);
+      if (!msg) {
+        return sendError(
+          res,
+          404,
+          'message_not_found',
+          `Message '${params.message_id}' not found`,
+        );
+      }
+      if (msg.status !== 'pending') {
+        return sendError(
+          res,
+          409,
+          'validation_error',
+          'Message already processed',
+        );
+      }
+
+      discardCrossBranchMessageArray(params.message_id);
+
+      broadcast('crossbranch.message.dropped', {
+        message_id: params.message_id,
+        from_agent_id: msg.sender_agent_id,
+      });
+
+      sendNoContent(res);
+    },
+  );
 
   // --- SharedSpace ---
 
@@ -932,7 +1164,12 @@ function setupRoutes(): void {
   addWildcardRoute('GET', '/api/v1/sharedspace', async (_req, res, params) => {
     const page = getSharedSpacePage(params.page_id);
     if (!page) {
-      return sendError(res, 404, 'page_not_found', `Page '${params.page_id}' not found`);
+      return sendError(
+        res,
+        404,
+        'page_not_found',
+        `Page '${params.page_id}' not found`,
+      );
     }
     sendJson(res, 200, {
       page_id: page.page_id,
@@ -953,12 +1190,22 @@ function setupRoutes(): void {
       body?: string;
     };
     if (!body.title || !body.summary || body.body === undefined) {
-      return sendError(res, 400, 'validation_error', 'title, summary, and body are required');
+      return sendError(
+        res,
+        400,
+        'validation_error',
+        'title, summary, and body are required',
+      );
     }
 
     const existing = getSharedSpacePage(params.page_id);
     if (!existing && !body.owner_agent_id) {
-      return sendError(res, 400, 'validation_error', 'owner_agent_id is required on creation');
+      return sendError(
+        res,
+        400,
+        'validation_error',
+        'owner_agent_id is required on creation',
+      );
     }
 
     // Check parent exists for new pages
@@ -1011,28 +1258,42 @@ function setupRoutes(): void {
     });
   });
 
-  addWildcardRoute('DELETE', '/api/v1/sharedspace', async (_req, res, params) => {
-    const page = getSharedSpacePage(params.page_id);
-    if (!page) {
-      return sendError(res, 404, 'page_not_found', `Page '${params.page_id}' not found`);
-    }
-    const children = getSharedSpaceChildren(params.page_id);
-    if (children.length > 0) {
-      return sendError(res, 409, 'page_has_children', 'Delete child pages first');
-    }
-    deleteSharedSpacePage(params.page_id);
+  addWildcardRoute(
+    'DELETE',
+    '/api/v1/sharedspace',
+    async (_req, res, params) => {
+      const page = getSharedSpacePage(params.page_id);
+      if (!page) {
+        return sendError(
+          res,
+          404,
+          'page_not_found',
+          `Page '${params.page_id}' not found`,
+        );
+      }
+      const children = getSharedSpaceChildren(params.page_id);
+      if (children.length > 0) {
+        return sendError(
+          res,
+          409,
+          'page_has_children',
+          'Delete child pages first',
+        );
+      }
+      deleteSharedSpacePage(params.page_id);
 
-    broadcast('sharedspace.page.updated', {
-      page_id: params.page_id,
-      title: page.title,
-      summary: page.summary,
-      owner_agent_id: page.owner_agent_id,
-      updated_by_agent_id: 'ceo',
-      operation: 'deleted',
-    });
+      broadcast('sharedspace.page.updated', {
+        page_id: params.page_id,
+        title: page.title,
+        summary: page.summary,
+        owner_agent_id: page.owner_agent_id,
+        updated_by_agent_id: 'ceo',
+        operation: 'deleted',
+      });
 
-    sendNoContent(res);
-  });
+      sendNoContent(res);
+    },
+  );
 
   // --- Cost ---
 
@@ -1137,7 +1398,12 @@ export function startDashboardServer(port: number): http.Server {
       if (match) {
         await match.handler(req, res, match.params);
       } else {
-        sendError(res, 404, 'not_found', `No route for ${req.method} ${pathname}`);
+        sendError(
+          res,
+          404,
+          'not_found',
+          `No route for ${req.method} ${pathname}`,
+        );
       }
     } catch (err) {
       logger.error({ err, path: pathname }, 'REST handler error');
@@ -1191,7 +1457,9 @@ export function startDashboardServer(port: number): http.Server {
         clients.delete(client);
         try {
           client.socket.destroy();
-        } catch { /* ignore */ }
+        } catch {
+          /* ignore */
+        }
         return;
       }
       client.alive = false;
@@ -1221,7 +1489,39 @@ export function stopDashboardServer(): void {
   for (const client of clients) {
     try {
       client.socket.destroy();
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   }
   clients.clear();
 }
+
+// --- Channel self-registration ---
+
+import { registerChannel } from './registry.js';
+import type { Channel } from '../types.js';
+
+const DASHBOARD_PORT = parseInt(process.env.NANOCLAW_PORT || '3000', 10);
+
+registerChannel('dashboard', (_opts) => {
+  const channel: Channel = {
+    name: 'dashboard',
+    async connect() {
+      startDashboardServer(DASHBOARD_PORT);
+    },
+    async sendMessage(_jid: string, _text: string) {
+      // Dashboard doesn't send messages via JID — events go over WebSocket
+    },
+    isConnected() {
+      return server !== null;
+    },
+    ownsJid(_jid: string) {
+      // Dashboard doesn't own any JIDs — it's a local API server
+      return false;
+    },
+    async disconnect() {
+      stopDashboardServer();
+    },
+  };
+  return channel;
+});

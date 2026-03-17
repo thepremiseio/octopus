@@ -1,0 +1,45 @@
+:root {
+  /* Backgrounds */
+  --bg-base: #0f0f0f;
+  --bg-surface-1: #161616;
+  --bg-surface-2: #1e1e1e;
+  --bg-surface-3: #252525;
+
+  /* Borders */
+  --border-default: #2a2a2a;
+  --border-emphasis: #333333;
+
+  /* Text */
+  --text-primary: #e8e8e8;
+  --text-secondary: #999999;
+  --text-muted: #555555;
+
+  /* Accent — amber */
+  --accent: #d4843a;
+  --accent-hover: #f0a050;
+  --accent-bg: #1f1508;
+  --accent-border: #3a2010;
+
+  /* Semantic */
+  --green: #4a9960;
+  --green-bg: #0a1a0e;
+  --red: #c05050;
+  --red-bg: #1a0a0a;
+  --blue: #4a7fa8;
+  --blue-bg: #0a1220;
+  --purple: #7a5ea8;
+  --purple-bg: #1a1028;
+  --yellow: #f7e274;
+
+  /* Typography */
+  --font-mono: 'IBM Plex Mono', monospace;
+  --font-sans: 'IBM Plex Sans', sans-serif;
+  --font-size-label: 10px;
+  --font-size-body: 12px;
+  --font-size-body-lg: 13px;
+
+  /* Layout */
+  --topbar-height: 36px;
+  --tree-width: 220px;
+  --right-panel-width: 280px;
+}

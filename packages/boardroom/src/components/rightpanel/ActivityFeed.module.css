@@ -1,0 +1,60 @@
+.feed {
+  padding: 12px;
+}
+
+.subheader {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-label);
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+.entry {
+  display: flex;
+  gap: 8px;
+  padding: 2px 0;
+  font-size: var(--font-size-body);
+  align-items: baseline;
+}
+
+.entryTs {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-label);
+  color: var(--text-muted);
+  flex-shrink: 0;
+  width: 40px;
+}
+
+.toolName {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-body);
+  flex-shrink: 0;
+}
+
+.toolRead {
+  color: var(--blue);
+}
+
+.toolHitl {
+  color: var(--accent);
+}
+
+.toolDefault {
+  color: var(--text-muted);
+}
+
+.detail {
+  font-family: var(--font-sans);
+  font-size: var(--font-size-body);
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.loading {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-label);
+  padding: 12px;
+}

@@ -1,0 +1,113 @@
+.info {
+  padding: 12px;
+}
+
+.name {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  color: var(--text-primary);
+  margin-bottom: 12px;
+}
+
+.sectionLabel {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-label);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 6px;
+  margin-top: 14px;
+}
+
+.row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-family: var(--font-sans);
+  font-size: var(--font-size-body);
+  color: var(--text-secondary);
+  padding: 2px 0;
+}
+
+.rowLabel {
+  color: var(--text-muted);
+}
+
+.rowValue {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-body);
+}
+
+.budgetExceeded {
+  color: var(--accent);
+}
+
+.resetLink {
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-label);
+  cursor: pointer;
+  margin-left: 6px;
+}
+
+.resetLink:hover {
+  color: var(--accent-hover);
+}
+
+.scheduleRow {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-body);
+  color: var(--text-secondary);
+  padding: 2px 0;
+}
+
+.schedCron {
+  color: var(--text-muted);
+}
+
+.addLink {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-label);
+  cursor: pointer;
+}
+
+.addLink:hover {
+  color: var(--accent);
+}
+
+.actionBtn {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-body);
+  color: var(--text-secondary);
+  padding: 4px 8px;
+  border-radius: 3px;
+  margin-bottom: 2px;
+}
+
+.actionBtn:hover {
+  background: var(--bg-surface-2);
+  color: var(--accent);
+}
+
+.actionBtnDanger {
+  composes: actionBtn;
+  color: var(--red);
+}
+
+.actionBtnDanger:hover {
+  color: var(--red);
+  background: var(--red-bg);
+}
+
+.loading {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-label);
+  padding: 12px;
+}

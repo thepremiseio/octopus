@@ -1,0 +1,73 @@
+.overview {
+  padding: 16px;
+}
+
+.title {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  color: var(--text-primary);
+  margin-bottom: 16px;
+}
+
+.cards {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.card {
+  flex: 1;
+  background: var(--bg-surface-1);
+  border: 1px solid var(--border-default);
+  border-radius: 4px;
+  padding: 12px;
+}
+
+.cardLabel {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-label);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+
+.cardValue {
+  font-family: var(--font-mono);
+  font-size: 18px;
+  color: var(--accent);
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.table th {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-label);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  text-align: left;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border-default);
+}
+
+.table td {
+  font-family: var(--font-sans);
+  font-size: var(--font-size-body);
+  color: var(--text-secondary);
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border-default);
+}
+
+.table td:last-child {
+  font-family: var(--font-mono);
+  text-align: right;
+  color: var(--text-primary);
+}
+
+.loading {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-label);
+}

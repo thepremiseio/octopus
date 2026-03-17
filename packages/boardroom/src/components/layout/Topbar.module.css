@@ -1,0 +1,63 @@
+.topbar {
+  height: var(--topbar-height);
+  background: var(--bg-surface-1);
+  border-bottom: 1px solid var(--border-default);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  flex-shrink: 0;
+}
+
+.left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.connectionDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.connected {
+  background: var(--green);
+}
+
+.connecting {
+  background: var(--accent);
+}
+
+.disconnected {
+  background: var(--red);
+}
+
+.logo {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-body);
+  color: var(--accent);
+  letter-spacing: 0.08em;
+  user-select: none;
+}
+
+.center {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-label);
+  color: var(--text-muted);
+  user-select: none;
+}
+
+.costButton {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-body);
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+.costButton:hover {
+  color: var(--accent);
+}

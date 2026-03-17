@@ -1,0 +1,36 @@
+.inputArea {
+  padding: 8px 16px;
+  border-top: 1px solid var(--border-default);
+  flex-shrink: 0;
+}
+
+.textarea {
+  width: 100%;
+  min-height: 40px;
+  max-height: 120px;
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border-default);
+  border-radius: 4px;
+  padding: 8px 12px;
+  font-family: var(--font-sans);
+  font-size: var(--font-size-body);
+  color: var(--text-primary);
+  resize: none;
+  line-height: 1.4;
+}
+
+.textarea:focus {
+  border-color: var(--accent);
+}
+
+.textarea:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.hint {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-label);
+  color: var(--text-muted);
+  margin-top: 4px;
+}

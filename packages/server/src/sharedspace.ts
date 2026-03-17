@@ -94,7 +94,9 @@ export function computeSharedSpaceIndex(agentId: string): string {
   const readableOwners = getReadableOwners(agentId);
   const allPages = getAllSharedSpacePages();
 
-  const visiblePages = allPages.filter((p) => readableOwners.has(p.owner_agent_id));
+  const visiblePages = allPages.filter((p) =>
+    readableOwners.has(p.owner_agent_id),
+  );
 
   if (visiblePages.length === 0) return '';
 
