@@ -27,6 +27,8 @@ interface ContainerInput {
   isMain: boolean;
   isScheduledTask?: boolean;
   assistantName?: string;
+  singleRun?: boolean;
+  runId?: string;
 }
 
 interface ContainerOutput {
@@ -337,29 +339,42 @@ async function runQuery(
   sdkEnv: Record<string, string | undefined>,
   resumeAt?: string,
 ): Promise<{ newSessionId?: string; lastAssistantUuid?: string; closedDuringQuery: boolean }> {
-  const stream = new MessageStream();
-  stream.push(prompt);
+  // For singleRun, pass prompt as a plain string so the SDK treats it as
+  // single-turn (isSingleUserTurn=true). The agentic loop (tool calls etc.)
+  // still runs to completion, but the for-await loop exits naturally after.
+  let stream: MessageStream | undefined;
+  let promptInput: string | MessageStream;
+  if (containerInput.singleRun) {
+    promptInput = prompt;
+  } else {
+    stream = new MessageStream();
+    stream.push(prompt);
+    promptInput = stream;
+  }
 
   // Poll IPC for follow-up messages and _close sentinel during the query
-  let ipcPolling = true;
+  // (skipped for singleRun since the container exits after one query)
+  let ipcPolling = !containerInput.singleRun;
   let closedDuringQuery = false;
   const pollIpcDuringQuery = () => {
     if (!ipcPolling) return;
     if (shouldClose()) {
       log('Close sentinel detected during query, ending stream');
       closedDuringQuery = true;
-      stream.end();
+      stream?.end();
       ipcPolling = false;
       return;
     }
     const messages = drainIpcInput();
     for (const text of messages) {
       log(`Piping IPC message into active query (${text.length} chars)`);
-      stream.push(text);
+      stream?.push(text);
     }
     setTimeout(pollIpcDuringQuery, IPC_POLL_MS);
   };
-  setTimeout(pollIpcDuringQuery, IPC_POLL_MS);
+  if (!containerInput.singleRun) {
+    setTimeout(pollIpcDuringQuery, IPC_POLL_MS);
+  }
 
   let newSessionId: string | undefined;
   let lastAssistantUuid: string | undefined;
@@ -390,7 +405,7 @@ async function runQuery(
   }
 
   for await (const message of query({
-    prompt: stream,
+    prompt: promptInput,
     options: {
       cwd: '/workspace/group',
       additionalDirectories: extraDirs.length > 0 ? extraDirs : undefined,
@@ -418,9 +433,13 @@ async function runQuery(
           command: 'node',
           args: [mcpServerPath],
           env: {
+            ...process.env,
             NANOCLAW_CHAT_JID: containerInput.chatJid,
             NANOCLAW_GROUP_FOLDER: containerInput.groupFolder,
             NANOCLAW_IS_MAIN: containerInput.isMain ? '1' : '0',
+            ...(process.env.OCTOPUS_HOST_URL ? { OCTOPUS_HOST_URL: process.env.OCTOPUS_HOST_URL } : {}),
+            ...(containerInput.runId ? { OCTOPUS_RUN_ID: containerInput.runId } : {}),
+            ...(containerInput.groupFolder ? { OCTOPUS_AGENT_ID: containerInput.groupFolder } : {}),
           },
         },
       },
@@ -506,41 +525,53 @@ async function main(): Promise<void> {
   }
 
   // Query loop: run query → wait for IPC message → run new query → repeat
+  // For singleRun (dashboard chat), execute once and exit — no IPC wait loop.
   let resumeAt: string | undefined;
   try {
-    while (true) {
-      log(`Starting query (session: ${sessionId || 'new'}, resumeAt: ${resumeAt || 'latest'})...`);
-
-      const queryResult = await runQuery(prompt, sessionId, mcpServerPath, containerInput, sdkEnv, resumeAt);
+    if (containerInput.singleRun) {
+      log(`Starting single-run query (session: ${sessionId || 'new'})...`);
+      const queryResult = await runQuery(prompt, sessionId, mcpServerPath, containerInput, sdkEnv);
       if (queryResult.newSessionId) {
         sessionId = queryResult.newSessionId;
       }
-      if (queryResult.lastAssistantUuid) {
-        resumeAt = queryResult.lastAssistantUuid;
-      }
-
-      // If _close was consumed during the query, exit immediately.
-      // Don't emit a session-update marker (it would reset the host's
-      // idle timer and cause a 30-min delay before the next _close).
-      if (queryResult.closedDuringQuery) {
-        log('Close sentinel consumed during query, exiting');
-        break;
-      }
-
-      // Emit session update so host can track it
+      // Emit session update so host can track the session ID
       writeOutput({ status: 'success', result: null, newSessionId: sessionId });
+      log('Single-run query complete, exiting');
+    } else {
+      while (true) {
+        log(`Starting query (session: ${sessionId || 'new'}, resumeAt: ${resumeAt || 'latest'})...`);
 
-      log('Query ended, waiting for next IPC message...');
+        const queryResult = await runQuery(prompt, sessionId, mcpServerPath, containerInput, sdkEnv, resumeAt);
+        if (queryResult.newSessionId) {
+          sessionId = queryResult.newSessionId;
+        }
+        if (queryResult.lastAssistantUuid) {
+          resumeAt = queryResult.lastAssistantUuid;
+        }
 
-      // Wait for the next message or _close sentinel
-      const nextMessage = await waitForIpcMessage();
-      if (nextMessage === null) {
-        log('Close sentinel received, exiting');
-        break;
+        // If _close was consumed during the query, exit immediately.
+        // Don't emit a session-update marker (it would reset the host's
+        // idle timer and cause a 30-min delay before the next _close).
+        if (queryResult.closedDuringQuery) {
+          log('Close sentinel consumed during query, exiting');
+          break;
+        }
+
+        // Emit session update so host can track it
+        writeOutput({ status: 'success', result: null, newSessionId: sessionId });
+
+        log('Query ended, waiting for next IPC message...');
+
+        // Wait for the next message or _close sentinel
+        const nextMessage = await waitForIpcMessage();
+        if (nextMessage === null) {
+          log('Close sentinel received, exiting');
+          break;
+        }
+
+        log(`Got new message (${nextMessage.length} chars), starting new query`);
+        prompt = nextMessage;
       }
-
-      log(`Got new message (${nextMessage.length} chars), starting new query`);
-      prompt = nextMessage;
     }
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err);

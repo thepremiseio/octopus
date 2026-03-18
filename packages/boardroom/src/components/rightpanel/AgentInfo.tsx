@@ -1,16 +1,32 @@
 import { useEffect, useState } from 'react';
 import type { AgentDetail, Schedule } from '../../types/api';
-import { getAgent, getSchedules, resetBudget } from '../../api/rest';
+import {
+  getAgent,
+  getSchedules,
+  createSchedule,
+  deleteAgent,
+  resetBudget,
+} from '../../api/rest';
+import { useAgentsStore } from '../../store/agents';
+import { PromptModal } from '../common/PromptModal';
 import { formatTs } from '../../utils/format';
 import styles from './AgentInfo.module.css';
 
 interface AgentInfoProps {
   agentId: string;
+  onEditClaudeMd?: (agentId: string) => void;
+  onViewBoilerplate?: (agentId: string) => void;
 }
 
-export function AgentInfo({ agentId }: AgentInfoProps) {
+type ModalState =
+  | { kind: 'schedule' }
+  | { kind: 'delete' }
+  | null;
+
+export function AgentInfo({ agentId, onEditClaudeMd, onViewBoilerplate }: AgentInfoProps) {
   const [agent, setAgent] = useState<AgentDetail | null>(null);
   const [schedules, setSchedules] = useState<Schedule[]>([]);
+  const [modal, setModal] = useState<ModalState>(null);
 
   useEffect(() => {
     void getAgent(agentId).then(setAgent);
@@ -30,6 +46,23 @@ export function AgentInfo({ agentId }: AgentInfoProps) {
     await resetBudget(agentId);
     const updated = await getAgent(agentId);
     setAgent(updated);
+  }
+
+  function handleScheduleSubmit(values: Record<string, string>) {
+    const cron = values.cron?.trim();
+    const name = values.name?.trim();
+    if (!cron || !name) return;
+    void createSchedule(agentId, { cron, name }).then(() => {
+      getSchedules(agentId).then((r) => setSchedules(r.schedules));
+    });
+    setModal(null);
+  }
+
+  function handleDeleteSubmit() {
+    void deleteAgent(agentId).then(() => {
+      useAgentsStore.getState().setSelectedAgent(null);
+    });
+    setModal(null);
   }
 
   return (
@@ -77,14 +110,49 @@ export function AgentInfo({ agentId }: AgentInfoProps) {
           <span>{s.name}</span>
         </div>
       ))}
-      <span className={styles.addLink}>+ add</span>
+      <span className={styles.addLink} onClick={() => setModal({ kind: 'schedule' })}>+ add</span>
 
       <div className={styles.sectionLabel}>Actions</div>
-      <button className={styles.actionBtn}>edit CLAUDE.md</button>
-      <button className={styles.actionBtn}>view boilerplate</button>
-      <button className={styles.actionBtn}>view SharedSpace index</button>
-      <button className={styles.actionBtn}>add schedule</button>
-      <button className={styles.actionBtnDanger}>delete agent</button>
+      <button
+        className={styles.actionBtn}
+        onClick={() => onEditClaudeMd?.(agentId)}
+      >edit CLAUDE.md</button>
+      <button
+        className={styles.actionBtn}
+        onClick={() => onViewBoilerplate?.(agentId)}
+      >view boilerplate</button>
+      <button
+        className={styles.actionBtn}
+        onClick={() => setModal({ kind: 'schedule' })}
+      >add schedule</button>
+      <button
+        className={styles.actionBtnDanger}
+        onClick={() => setModal({ kind: 'delete' })}
+      >delete agent</button>
+
+      {modal?.kind === 'schedule' && (
+        <PromptModal
+          title="Add scheduled task"
+          fields={[
+            { key: 'cron', label: 'Cron expression', placeholder: '0 9 * * *' },
+            { key: 'name', label: 'Task name', placeholder: 'daily summary' },
+          ]}
+          submitLabel="Create"
+          onSubmit={handleScheduleSubmit}
+          onCancel={() => setModal(null)}
+        />
+      )}
+
+      {modal?.kind === 'delete' && (
+        <PromptModal
+          title="Delete agent"
+          confirmMessage={`Delete "${agent.agent_name}" and all its children? This cannot be undone.`}
+          danger
+          submitLabel="Delete"
+          onSubmit={handleDeleteSubmit}
+          onCancel={() => setModal(null)}
+        />
+      )}
     </div>
   );
 }

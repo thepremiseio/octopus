@@ -1,0 +1,205 @@
+.debug {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.controls {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+  flex-shrink: 0;
+}
+
+.startBtn,
+.stopBtn {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-label);
+  text-transform: uppercase;
+  padding: 4px 10px;
+  cursor: pointer;
+  border: 1px solid var(--border-default);
+  background: var(--bg-surface-2);
+  color: var(--text-secondary);
+}
+
+.startBtn:hover {
+  background: var(--bg-surface-3);
+  color: var(--green);
+  border-color: var(--green);
+}
+
+.stopBtn {
+  color: var(--red);
+  border-color: var(--red);
+}
+
+.stopBtn:hover {
+  background: var(--red-bg);
+}
+
+.waiting {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-label);
+  padding: 12px 0;
+}
+
+.exchanges {
+  flex: 1;
+  overflow-y: auto;
+}
+
+/* Collapsible exchange */
+.exchange {
+  border: 1px solid var(--border-default);
+  margin-bottom: 6px;
+}
+
+.exchangeHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-label);
+  color: var(--text-secondary);
+  background: var(--bg-surface-2);
+}
+
+.exchangeHeader:hover {
+  background: var(--bg-surface-3);
+}
+
+.chevron {
+  color: var(--text-muted);
+  width: 10px;
+  flex-shrink: 0;
+}
+
+.exchangeTs {
+  color: var(--text-muted);
+}
+
+.tokenInfo {
+  color: var(--text-muted);
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.exchangeBody {
+  padding: 0;
+  border-top: 1px solid var(--border-default);
+}
+
+/* Raw JSON toggle */
+.rawToggle {
+  display: flex;
+  justify-content: flex-end;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border-default);
+}
+
+.copyBtn {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-label);
+  cursor: pointer;
+  color: var(--text-muted);
+  background: none;
+  border: 1px solid var(--border-default);
+  padding: 1px 6px;
+  margin-right: 4px;
+}
+
+.copyBtn:hover {
+  color: var(--text-secondary);
+  border-color: var(--border-emphasis);
+}
+
+.rawBtn {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-label);
+  cursor: pointer;
+  color: var(--text-muted);
+  background: none;
+  border: 1px solid var(--border-default);
+  padding: 1px 6px;
+}
+
+.rawBtn:hover {
+  color: var(--text-secondary);
+  border-color: var(--border-emphasis);
+}
+
+.rawBtnActive {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* Message blocks */
+.messageBlock {
+  border-bottom: 1px solid var(--border-default);
+  padding: 6px 8px;
+}
+
+.messageBlock:last-child {
+  border-bottom: none;
+}
+
+.roleLabel {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-label);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.roleSystem {
+  color: var(--purple);
+}
+
+.roleUser {
+  color: var(--text-muted);
+}
+
+.roleAssistant {
+  color: var(--green);
+}
+
+.roleTool {
+  color: var(--blue);
+}
+
+.messageContent {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-label);
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 200px;
+  overflow-y: auto;
+  line-height: 1.5;
+}
+
+.rawJson {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-label);
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  padding: 8px;
+  overflow-y: auto;
+  max-height: 400px;
+  line-height: 1.4;
+}
+
+.toolUseLabel {
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-label);
+}

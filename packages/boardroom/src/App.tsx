@@ -7,6 +7,8 @@ import { PrimaryPanel } from './components/layout/PrimaryPanel';
 import type { PanelMode } from './components/layout/PrimaryPanel';
 import { RightPanel } from './components/layout/RightPanel';
 import { CommandPalette } from './components/common/CommandPalette';
+import { ClaudeMdEditor } from './components/editor/ClaudeMdEditor';
+import { BoilerplateViewer } from './components/editor/BoilerplateViewer';
 import { initAgentsSubscriptions, useAgentsStore } from './store/agents';
 import { initQueuesSubscriptions, useQueuesStore } from './store/queues';
 import { initChatSubscriptions, useChatStore } from './store/chat';
@@ -32,9 +34,16 @@ function ensureSubscriptions() {
   initCostSubscriptions();
 }
 
+// Track which agent is being edited/viewed in editor modes
+interface EditorTarget {
+  agentId: string;
+}
+
 export function App() {
   const { connectionStatus } = useWebSocket();
   const [mode, setMode] = useState<PanelMode>('queue');
+  const [prevMode, setPrevMode] = useState<PanelMode>('queue');
+  const [editorTarget, setEditorTarget] = useState<EditorTarget | null>(null);
   const [showPalette, setShowPalette] = useState(false);
 
   useEffect(() => {
@@ -64,7 +73,7 @@ export function App() {
   const handleSelectAgent = useCallback((agentId: string) => {
     useAgentsStore.getState().setSelectedAgent(agentId);
     useChatStore.getState().setActiveAgent(agentId);
-    setMode((prev) => (prev === 'queue' || prev === 'cost' ? 'chat' : prev));
+    setMode('chat');
   }, []);
 
   const handleChatWith = useCallback((agentId: string) => {
@@ -80,6 +89,23 @@ export function App() {
       useChatStore.getState().newConversation(agentId, r.conversation_id);
     });
   }, []);
+
+  const handleEditClaudeMd = useCallback((agentId: string) => {
+    setEditorTarget({ agentId });
+    setPrevMode(mode);
+    setMode('claudemd');
+  }, [mode]);
+
+  const handleViewBoilerplate = useCallback((agentId: string) => {
+    setEditorTarget({ agentId });
+    setPrevMode(mode);
+    setMode('boilerplate');
+  }, [mode]);
+
+  const handleEditorClose = useCallback(() => {
+    setMode(prevMode);
+    setEditorTarget(null);
+  }, [prevMode]);
 
   useKeyboard({
     onSetMode: setMode,
@@ -97,8 +123,19 @@ export function App() {
           {mode === 'chat' && <ChatMode />}
           {mode === 'sharedspace' && <SharedSpaceMode />}
           {mode === 'cost' && <CostOverview />}
+          {mode === 'claudemd' && editorTarget && (
+            <ClaudeMdEditor agentId={editorTarget.agentId} onClose={handleEditorClose} />
+          )}
+          {mode === 'boilerplate' && editorTarget && (
+            <BoilerplateViewer agentId={editorTarget.agentId} onClose={handleEditorClose} />
+          )}
         </PrimaryPanel>
-        <RightPanel primaryMode={mode} onSelectPage={handleSelectPage} />
+        <RightPanel
+          primaryMode={mode}
+          onSelectPage={handleSelectPage}
+          onEditClaudeMd={handleEditClaudeMd}
+          onViewBoilerplate={handleViewBoilerplate}
+        />
       </div>
       {showPalette && (
         <CommandPalette

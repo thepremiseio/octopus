@@ -14,6 +14,7 @@ import {
   DATA_DIR,
   GROUPS_DIR,
   IDLE_TIMEOUT,
+  NANOCLAW_PORT,
   TIMEZONE,
 } from './config.js';
 import { resolveGroupFolderPath, resolveGroupIpcPath } from './group-folder.js';
@@ -26,6 +27,7 @@ import {
   stopContainer,
 } from './container-runtime.js';
 import { detectAuthMode } from './credential-proxy.js';
+import { ensureCachedIndex } from './sharedspace.js';
 import { validateAdditionalMounts } from './mount-security.js';
 import { RegisteredGroup } from './types.js';
 import {
@@ -37,7 +39,6 @@ import {
   getAgentById,
   getAgentPath,
   getAncestryChain,
-  getCachedSharedSpaceIndex,
   getDailyTokenUsage,
   getDirectChildren,
   getUnreadInboxMessages,
@@ -65,6 +66,35 @@ let broadcastFn: BroadcastFn = () => {};
 
 export function setBroadcastFn(fn: BroadcastFn): void {
   broadcastFn = fn;
+}
+
+// Debug broadcast: sends events only to clients subscribed to a specific agent
+type DebugBroadcastFn = (agentId: string, event: OctopusEvent) => void;
+let debugBroadcastFn: DebugBroadcastFn = () => {};
+
+export function setDebugBroadcastFn(fn: DebugBroadcastFn): void {
+  debugBroadcastFn = fn;
+}
+
+export function broadcastDebug(
+  agentId: string,
+  type: string,
+  payload: Record<string, unknown>,
+): void {
+  debugBroadcastFn(agentId, { v: 1, type, ts: Date.now(), payload });
+}
+
+// --- Octopus: Agent run trigger ---
+
+type RunAgentFn = (agentId: string, conversationId: string, message: string) => void;
+let runAgentFn: RunAgentFn = () => {};
+
+export function setRunAgentFn(fn: RunAgentFn): void {
+  runAgentFn = fn;
+}
+
+export function triggerAgentRun(agentId: string, conversationId: string, message: string): void {
+  runAgentFn(agentId, conversationId, message);
 }
 
 export function broadcast(
@@ -249,7 +279,7 @@ export function assembleSystemPrompt(agentId: string): string {
   }
 
   // 3. Cached SharedSpace index
-  const ssIndex = getCachedSharedSpaceIndex(agentId) || '';
+  const ssIndex = ensureCachedIndex(agentId);
 
   const parts = [claudeMd, boilerplate];
   if (ssIndex) {
@@ -306,6 +336,8 @@ export interface ContainerInput {
   isMain: boolean;
   isScheduledTask?: boolean;
   assistantName?: string;
+  singleRun?: boolean;
+  runId?: string;
 }
 
 export interface ContainerOutput {
@@ -486,10 +518,16 @@ function buildContainerArgs(
   // Pass host timezone so container's local time matches the user's
   args.push('-e', `TZ=${TIMEZONE}`);
 
-  // Route API traffic through the credential proxy (containers never see real secrets)
+  // Route API traffic through the credential proxy (containers never see real secrets).
   args.push(
     '-e',
     `ANTHROPIC_BASE_URL=http://${CONTAINER_HOST_GATEWAY}:${CREDENTIAL_PROXY_PORT}`,
+  );
+
+  // Octopus tools endpoint — the MCP server calls back to this URL.
+  args.push(
+    '-e',
+    `OCTOPUS_HOST_URL=http://${CONTAINER_HOST_GATEWAY}:${NANOCLAW_PORT}`,
   );
 
   // Mirror the host's auth method with a placeholder value.
@@ -539,6 +577,60 @@ export async function runContainerAgent(
 
   const groupDir = resolveGroupFolderPath(group.folder);
   fs.mkdirSync(groupDir, { recursive: true });
+
+  // Inject boilerplate + SharedSpace index into CLAUDE.md for the container.
+  // The CEO's original content is preserved above a marker; everything below
+  // the marker is regenerated on each run.
+  const BOILERPLATE_MARKER = '\n\n<!-- octopus:auto-generated -->\n';
+  const claudeMdPath = path.join(groupDir, 'CLAUDE.md');
+  if (fs.existsSync(claudeMdPath)) {
+    let original = fs.readFileSync(claudeMdPath, 'utf-8');
+    // Strip any previous auto-generated section
+    const markerIdx = original.indexOf(BOILERPLATE_MARKER);
+    if (markerIdx >= 0) {
+      original = original.slice(0, markerIdx);
+    }
+    const agent = getAgentById(input.groupFolder);
+    if (agent) {
+      const ancestry = getAncestryChain(input.groupFolder);
+      const parent = ancestry.length > 1 ? ancestry[ancestry.length - 2] : null;
+      const children = getDirectChildren(input.groupFolder);
+
+      let boilerplate = '## Position\n\n';
+      if (parent) {
+        boilerplate += `You report to ${parent.agent_name}.\n`;
+      } else {
+        boilerplate += 'You report directly to the CEO.\n';
+      }
+      boilerplate += `Your position in the hierarchy: ${ancestry.map((a) => a.agent_name).join(' → ')}\n`;
+      if (children.length > 0) {
+        boilerplate += `Direct reports: ${children.map((c) => c.agent_name).join(', ')}\n`;
+      }
+      boilerplate += '\n## Instructions\n\n';
+      boilerplate += '- **Escalation:** If you hit a decision you cannot make alone, escalate to your manager.\n';
+      boilerplate += '- **Inbox:** Process unread inbox messages before your main task.\n';
+      boilerplate += '- **Approvals:** See SharedSpace approval policy for when approval is required.\n';
+      boilerplate += '\n## Available Tools\n\n';
+      boilerplate += '- `sharedspace_read(id)` — Read a SharedSpace page\n';
+      boilerplate += '- `sharedspace_write(id, content)` — Write a SharedSpace page\n';
+      boilerplate += '- `sharedspace_list(prefix?)` — List SharedSpace pages\n';
+      boilerplate += '- `send_message(to, subject, body)` — Send a message to another agent\n';
+      boilerplate += '- `request_hitl(type, subject, context, options?, preference?)` — Request CEO input\n';
+
+      const unread = getUnreadInboxMessages(input.groupFolder);
+      if (unread.length > 0) {
+        boilerplate = `**You have ${unread.length} unread inbox message(s). Process these before your main task.**\n\n` + boilerplate;
+      }
+
+      const ssIndex = ensureCachedIndex(input.groupFolder);
+      const parts = [boilerplate];
+      if (ssIndex) {
+        parts.push('## SharedSpace Index\n\n' + ssIndex);
+      }
+
+      fs.writeFileSync(claudeMdPath, original + BOILERPLATE_MARKER + parts.join('\n\n'));
+    }
+  }
 
   const mounts = buildVolumeMounts(group, input.isMain);
   const safeName = group.folder.replace(/[^a-zA-Z0-9-]/g, '-');

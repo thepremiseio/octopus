@@ -19,6 +19,10 @@ const TASKS_DIR = path.join(IPC_DIR, 'tasks');
 const chatJid = process.env.NANOCLAW_CHAT_JID!;
 const groupFolder = process.env.NANOCLAW_GROUP_FOLDER!;
 const isMain = process.env.NANOCLAW_IS_MAIN === '1';
+const octopusHostUrl = process.env.OCTOPUS_HOST_URL || '';
+const octopusRunId = process.env.OCTOPUS_RUN_ID || '';
+const octopusAgentId = process.env.OCTOPUS_AGENT_ID || '';
+const isOctopus = !!octopusHostUrl;
 
 function writeIpcFile(dir: string, data: object): string {
   fs.mkdirSync(dir, { recursive: true });
@@ -39,28 +43,52 @@ const server = new McpServer({
   version: '1.0.0',
 });
 
-server.tool(
-  'send_message',
-  "Send a message to the user or group immediately while you're still running. Use this for progress updates or to send multiple messages. You can call this multiple times.",
-  {
-    text: z.string().describe('The message text to send'),
-    sender: z.string().optional().describe('Your role/identity name (e.g. "Researcher"). When set, messages appear from a dedicated bot in Telegram.'),
-  },
-  async (args) => {
-    const data: Record<string, string | undefined> = {
-      type: 'message',
-      chatJid,
-      text: args.text,
-      sender: args.sender || undefined,
-      groupFolder,
-      timestamp: new Date().toISOString(),
-    };
+// In Octopus mode, send_message sends to another agent (via host server).
+// In NanoClaw mode, send_message sends to the chat/group (via IPC).
+if (isOctopus) {
+  server.tool(
+    'send_message',
+    'Send a message to another agent in the organisation. Same-branch messages are delivered directly. Cross-branch messages are queued for CEO review.',
+    {
+      to: z.string().describe('The agent_id of the recipient'),
+      subject: z.string().describe('Short subject line'),
+      body: z.string().describe('Message body'),
+    },
+    async (args) => {
+      const result = await callHostTool('send_message', args);
+      if (result.error) {
+        return { content: [{ type: 'text' as const, text: `Error: ${result.error}` }], isError: true };
+      }
+      const msg = result.queued_for_ceo
+        ? `Message queued for CEO review (cross-branch). ID: ${result.message_id}`
+        : `Message delivered to ${args.to}. ID: ${result.message_id}`;
+      return { content: [{ type: 'text' as const, text: msg }] };
+    },
+  );
+} else {
+  server.tool(
+    'send_message',
+    "Send a message to the user or group immediately while you're still running. Use this for progress updates or to send multiple messages. You can call this multiple times.",
+    {
+      text: z.string().describe('The message text to send'),
+      sender: z.string().optional().describe('Your role/identity name (e.g. "Researcher"). When set, messages appear from a dedicated bot in Telegram.'),
+    },
+    async (args) => {
+      const data: Record<string, string | undefined> = {
+        type: 'message',
+        chatJid,
+        text: args.text,
+        sender: args.sender || undefined,
+        groupFolder,
+        timestamp: new Date().toISOString(),
+      };
 
-    writeIpcFile(MESSAGES_DIR, data);
+      writeIpcFile(MESSAGES_DIR, data);
 
-    return { content: [{ type: 'text' as const, text: 'Message sent.' }] };
-  },
-);
+      return { content: [{ type: 'text' as const, text: 'Message sent.' }] };
+    },
+  );
+}
 
 server.tool(
   'schedule_task',
@@ -332,6 +360,111 @@ Use available_groups.json to find the JID for a group. The folder name must be c
     };
   },
 );
+
+// --- Octopus tools (only registered when running inside Octopus) ---
+
+async function callHostTool(tool: string, args: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const url = `${octopusHostUrl}/api/v1/internal/tool-call`;
+  try {
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tool, agent_id: octopusAgentId, run_id: octopusRunId, args }),
+    });
+    if (!resp.ok) {
+      const text = await resp.text();
+      return { error: `HTTP ${resp.status}: ${text}` };
+    }
+    return resp.json() as Promise<Record<string, unknown>>;
+  } catch (err) {
+    const cause = err instanceof Error && 'cause' in err ? ` cause: ${(err as any).cause}` : '';
+    return { error: `fetch to ${url} failed: ${err instanceof Error ? err.message : String(err)}${cause}` };
+  }
+}
+
+if (isOctopus) {
+  server.tool(
+    'sharedspace_read',
+    'Read a SharedSpace page by its ID. Returns the page title, summary, owner, and body.',
+    {
+      page_id: z.string().describe('The page ID (e.g. "work/ventures/startup-a")'),
+    },
+    async (args) => {
+      const result = await callHostTool('sharedspace_read', { page_id: args.page_id });
+      if (result.error) {
+        return { content: [{ type: 'text' as const, text: `Error: ${result.error}` }], isError: true };
+      }
+      const data = result.data as { page_id: string; title: string; summary: string; owner_agent_id: string; body: string };
+      return {
+        content: [{ type: 'text' as const, text: `# ${data.title}\n\n**Summary:** ${data.summary}\n**Owner:** ${data.owner_agent_id}\n\n${data.body}` }],
+      };
+    },
+  );
+
+  server.tool(
+    'sharedspace_write',
+    'Create or update a SharedSpace page. Provide the page ID and content (title, summary, body).',
+    {
+      page_id: z.string().describe('The page ID (e.g. "work/ventures/startup-a")'),
+      title: z.string().describe('Page title'),
+      summary: z.string().describe('Brief one-line summary'),
+      body: z.string().describe('Full page content (markdown)'),
+    },
+    async (args) => {
+      const result = await callHostTool('sharedspace_write', {
+        page_id: args.page_id,
+        content: { title: args.title, summary: args.summary, body: args.body },
+      });
+      if (result.error) {
+        return { content: [{ type: 'text' as const, text: `Error: ${result.error}` }], isError: true };
+      }
+      const data = result.data as { page_id: string; operation: string };
+      return { content: [{ type: 'text' as const, text: `Page '${data.page_id}' ${data.operation}.` }] };
+    },
+  );
+
+  server.tool(
+    'sharedspace_list',
+    'List SharedSpace pages visible to you. Optionally filter by prefix.',
+    {
+      prefix: z.string().optional().describe('Filter pages whose ID starts with this prefix (e.g. "work/")'),
+    },
+    async (args) => {
+      const result = await callHostTool('sharedspace_list', { prefix: args.prefix });
+      if (result.error) {
+        return { content: [{ type: 'text' as const, text: `Error: ${result.error}` }], isError: true };
+      }
+      const pages = result.data as Array<{ page_id: string; title: string; summary: string; owner_agent_id: string }>;
+      if (pages.length === 0) {
+        return { content: [{ type: 'text' as const, text: 'No pages found.' }] };
+      }
+      const list = pages.map((p) => `- **${p.page_id}**: ${p.title} — ${p.summary} (owner: ${p.owner_agent_id})`).join('\n');
+      return { content: [{ type: 'text' as const, text: `SharedSpace pages:\n${list}` }] };
+    },
+  );
+
+  server.tool(
+    'request_hitl',
+    'Request human-in-the-loop input from the CEO. Use "approval" for yes/no decisions, "choice" for multiple options, or "fyi" for informational notifications.',
+    {
+      type: z.enum(['approval', 'choice', 'fyi']).describe('Card type'),
+      subject: z.string().describe('Short subject line for the card'),
+      context: z.string().describe('Detailed context explaining the situation'),
+      options: z.array(z.string()).optional().describe('Options for choice cards'),
+      preference: z.number().optional().describe('Your recommended option index (0-based) for choice cards'),
+    },
+    async (args) => {
+      const result = await callHostTool('request_hitl', args);
+      if (result.error) {
+        return { content: [{ type: 'text' as const, text: `Error: ${result.error}` }], isError: true };
+      }
+      const msg = result.should_terminate
+        ? `HITL card created (${result.card_id}). Your execution will be paused until the CEO responds.`
+        : `FYI card created (${result.card_id}). Continuing execution.`;
+      return { content: [{ type: 'text' as const, text: msg }] };
+    },
+  );
+}
 
 // Start the stdio transport
 const transport = new StdioServerTransport();

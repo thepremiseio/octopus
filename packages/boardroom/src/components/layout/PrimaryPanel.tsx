@@ -3,7 +3,7 @@ import { useAgentsStore } from '../../store/agents';
 import { useChatStore } from '../../store/chat';
 import styles from './PrimaryPanel.module.css';
 
-export type PanelMode = 'queue' | 'chat' | 'sharedspace' | 'cost';
+export type PanelMode = 'queue' | 'chat' | 'sharedspace' | 'cost' | 'claudemd' | 'boilerplate';
 
 interface PrimaryPanelProps {
   mode: PanelMode;

@@ -9,7 +9,7 @@ import {
   TIMEZONE,
   TRIGGER_PATTERN,
 } from './config.js';
-import { startCredentialProxy } from './credential-proxy.js';
+import { startCredentialProxy, setOnExchangeFn } from './credential-proxy.js';
 import './channels/index.js';
 import {
   getChannelFactory,
@@ -18,6 +18,10 @@ import {
 import {
   ContainerOutput,
   runContainerAgent,
+  setRunAgentFn,
+  broadcast,
+  broadcastDebug,
+  generateId,
   writeGroupsSnapshot,
   writeTasksSnapshot,
 } from './container-runner.js';
@@ -36,14 +40,19 @@ import {
   getRegisteredGroup,
   getRouterState,
   initDatabase,
+  insertLlmExchange,
   setRegisteredGroup,
   setRouterState,
   setSession,
+  getSession,
   storeChatMetadata,
   storeMessage,
+  getAgentById,
+  insertConversationMessage,
 } from './db.js';
 import { GroupQueue } from './group-queue.js';
 import { resolveGroupFolderPath } from './group-folder.js';
+import { setCurrentRun, clearCurrentRun } from './debug-state.js';
 import { startIpcWatcher } from './ipc.js';
 import { findChannel, formatMessages, formatOutbound } from './router.js';
 import {
@@ -270,6 +279,7 @@ async function runAgent(
   prompt: string,
   chatJid: string,
   onOutput?: (output: ContainerOutput) => Promise<void>,
+  options?: { singleRun?: boolean; runId?: string },
 ): Promise<'success' | 'error'> {
   const isMain = group.isMain === true;
   const sessionId = sessions[group.folder];
@@ -320,6 +330,8 @@ async function runAgent(
         chatJid,
         isMain,
         assistantName: ASSISTANT_NAME,
+        ...(options?.singleRun ? { singleRun: true } : {}),
+        ...(options?.runId ? { runId: options.runId } : {}),
       },
       (proc, containerName) =>
         queue.registerProcess(chatJid, proc, containerName, group.folder),
@@ -483,6 +495,32 @@ async function main(): Promise<void> {
     PROXY_BIND_HOST,
   );
 
+  // Wire up debug exchange capture from credential proxy
+  setOnExchangeFn((exchange) => {
+    const ts = Date.now();
+    insertLlmExchange({
+      run_id: exchange.runId,
+      agent_id: exchange.agentId,
+      exchange_index: exchange.exchangeIndex,
+      messages_json: exchange.messagesJson,
+      response_json: exchange.responseJson,
+      tokens_in: exchange.tokensIn,
+      tokens_out: exchange.tokensOut,
+      ts,
+    });
+
+    broadcastDebug(exchange.agentId, 'debug.exchange.recorded', {
+      agent_id: exchange.agentId,
+      run_id: exchange.runId,
+      exchange_index: exchange.exchangeIndex,
+      messages_json: exchange.messagesJson,
+      response_json: exchange.responseJson,
+      tokens_in: exchange.tokensIn,
+      tokens_out: exchange.tokensOut,
+      ts,
+    });
+  });
+
   // Graceful shutdown handlers
   const shutdown = async (signal: string) => {
     logger.info({ signal }, 'Shutdown signal received');
@@ -633,6 +671,83 @@ async function main(): Promise<void> {
     writeGroupsSnapshot: (gf, im, ag, rj) =>
       writeGroupsSnapshot(gf, im, ag, rj),
   });
+  // Wire up dashboard → agent run trigger
+  setRunAgentFn((agentId, conversationId, message) => {
+    const agent = getAgentById(agentId);
+    if (!agent) {
+      logger.warn({ agentId }, 'triggerAgentRun: agent not found');
+      return;
+    }
+
+    // Use agentId as folder so groups/{agentId}/CLAUDE.md is mounted in the container.
+    // Bridge conversation session: pre-populate sessions[agentId] with the session
+    // saved under conversationId so each conversation gets its own Claude session history.
+    const existingConvSession = sessions[conversationId] ?? null;
+    if (existingConvSession) {
+      sessions[agentId] = existingConvSession;
+    } else {
+      // New conversation: clear any stale session from a previous conversation
+      // so the container starts fresh instead of resuming old history.
+      delete sessions[agentId];
+    }
+
+    const group: RegisteredGroup = {
+      name: agent.agent_name,
+      folder: agentId,  // agentId → mounts groups/{agentId}/ which contains CLAUDE.md
+      trigger: '',
+      added_at: new Date().toISOString(),
+      requiresTrigger: false,
+    };
+
+    // Ensure the agent's folder exists
+    const agentDir = resolveGroupFolderPath(agentId);
+    fs.mkdirSync(agentDir, { recursive: true });
+
+    // Track current run for debug exchange capture
+    const debugRunId = generateId('run');
+    setCurrentRun(agentId, debugRunId);
+
+    void runAgent(group, message, conversationId, async (output) => {
+      // Session-update marker (result: null) — nothing to broadcast
+      if (!output.result) return;
+      const text = output.result.replace(/<internal>[\s\S]*?<\/internal>/g, '').trim();
+      if (!text) return;
+
+      const msgId = generateId('msg');
+      const now = Date.now();
+      insertConversationMessage({
+        message_id: msgId,
+        conversation_id: conversationId,
+        agent_id: agentId,
+        role: 'agent',
+        content: text,
+        ts: now,
+        run_id: null,
+      });
+
+      broadcast('chat.message.received', {
+        agent_id: agentId,
+        conversation_id: conversationId,
+        message_id: msgId,
+        role: 'agent',
+        content: text,
+        ts: now,
+        run_id: null,
+      });
+    }, { singleRun: true, runId: debugRunId }).then(() => {
+      clearCurrentRun(agentId);
+      // After run, save the session under conversationId for next-turn continuity.
+      // runAgent stored the new session under sessions[agentId] (group.folder).
+      const newSession = sessions[agentId];
+      if (newSession) {
+        sessions[conversationId] = newSession;
+        setSession(conversationId, newSession);
+      }
+    }).catch((err) => {
+      logger.error({ agentId, err }, 'triggerAgentRun failed');
+    });
+  });
+
   queue.setProcessMessagesFn(processGroupMessages);
   recoverPendingMessages();
   startMessageLoop().catch((err) => {

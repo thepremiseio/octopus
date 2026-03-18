@@ -4,8 +4,8 @@ import path from 'path';
 import { CronExpressionParser } from 'cron-parser';
 
 import { DATA_DIR, IPC_POLL_INTERVAL, TIMEZONE } from './config.js';
-import { AvailableGroup } from './container-runner.js';
-import { createTask, deleteTask, getTaskById, updateTask } from './db.js';
+import { AvailableGroup, broadcastDebug } from './container-runner.js';
+import { createTask, deleteTask, getTaskById, insertLlmExchange, updateTask } from './db.js';
 import { isValidGroupFolder } from './group-folder.js';
 import { logger } from './logger.js';
 import { RegisteredGroup } from './types.js';
@@ -143,6 +143,54 @@ export function startIpcWatcher(deps: IpcDeps): void {
         }
       } catch (err) {
         logger.error({ err, sourceGroup }, 'Error reading IPC tasks directory');
+      }
+
+      // Process LLM exchange captures from this group's IPC directory
+      const exchangesDir = path.join(ipcBaseDir, sourceGroup, 'exchanges');
+      try {
+        if (fs.existsSync(exchangesDir)) {
+          const exchangeFiles = fs
+            .readdirSync(exchangesDir)
+            .filter((f) => f.endsWith('.json'));
+          for (const file of exchangeFiles) {
+            const filePath = path.join(exchangesDir, file);
+            try {
+              const data = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as {
+                run_id: string;
+                agent_id: string;
+                exchange_index: number;
+                messages_json: string;
+                response_json: string | null;
+                tokens_in: number;
+                tokens_out: number;
+              };
+
+              const ts = Date.now();
+              insertLlmExchange({ ...data, ts });
+
+              broadcastDebug(data.agent_id, 'debug.exchange.recorded', {
+                agent_id: data.agent_id,
+                run_id: data.run_id,
+                exchange_index: data.exchange_index,
+                messages_json: data.messages_json,
+                response_json: data.response_json,
+                tokens_in: data.tokens_in,
+                tokens_out: data.tokens_out,
+                ts,
+              });
+
+              fs.unlinkSync(filePath);
+            } catch (err) {
+              logger.error(
+                { file, sourceGroup, err },
+                'Error processing IPC exchange',
+              );
+              fs.unlinkSync(filePath);
+            }
+          }
+        }
+      } catch (err) {
+        logger.error({ err, sourceGroup }, 'Error reading IPC exchanges directory');
       }
     }
 

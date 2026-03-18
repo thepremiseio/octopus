@@ -53,9 +53,15 @@ export function ChatMode() {
   }
 
   async function handleSend(content: string) {
-    if (!activeAgentId || !convId) return;
-    const r = await sendMessage(activeAgentId, convId, { content });
-    useChatStore.getState().appendMessage(convId, {
+    if (!activeAgentId) return;
+    let targetConvId = convId;
+    if (!targetConvId) {
+      const r = await createConversation(activeAgentId);
+      useChatStore.getState().newConversation(activeAgentId, r.conversation_id);
+      targetConvId = r.conversation_id;
+    }
+    const r = await sendMessage(activeAgentId, targetConvId, { content });
+    useChatStore.getState().appendMessage(targetConvId, {
       message_id: r.message_id,
       role: 'ceo',
       content: r.content,
@@ -91,7 +97,7 @@ export function ChatMode() {
         </button>
       </div>
       <MessageThread messages={messageList} agentName={agent.agent_name} />
-      <ChatInput disabled={!isIdle || isReadOnly} onSend={(c) => void handleSend(c)} />
+      <ChatInput disabled={(!isIdle && !!convId) || isReadOnly} onSend={(c) => void handleSend(c)} />
     </div>
   );
 }

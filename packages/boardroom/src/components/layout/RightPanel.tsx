@@ -3,18 +3,28 @@ import { useQueuesStore } from '../../store/queues';
 import { useAgentsStore } from '../../store/agents';
 import { AgentInfo } from '../rightpanel/AgentInfo';
 import { ActivityFeed } from '../rightpanel/ActivityFeed';
+import { DebugPanel } from '../rightpanel/DebugPanel';
 import { PageTree } from '../rightpanel/PageTree';
 import type { PanelMode } from './PrimaryPanel';
 import styles from './RightPanel.module.css';
 
-type RightTab = 'agent-info' | 'activity-feed' | 'page-tree';
+type RightTab = 'agent-info' | 'activity-feed' | 'debug' | 'page-tree';
+
+const TAB_LABELS: Record<RightTab, string> = {
+  'agent-info': 'agent info',
+  'activity-feed': 'activity feed',
+  'debug': 'debug',
+  'page-tree': 'page tree',
+};
 
 interface RightPanelProps {
   primaryMode: PanelMode;
   onSelectPage: (pageId: string) => void;
+  onEditClaudeMd?: (agentId: string) => void;
+  onViewBoilerplate?: (agentId: string) => void;
 }
 
-export function RightPanel({ primaryMode, onSelectPage }: RightPanelProps) {
+export function RightPanel({ primaryMode, onSelectPage, onEditClaudeMd, onViewBoilerplate }: RightPanelProps) {
   const selectedItem = useQueuesStore((s) => s.selectedItem);
   const hitlCards = useQueuesStore((s) => s.hitlCards);
   const crossBranchMessages = useQueuesStore((s) => s.crossBranchMessages);
@@ -70,7 +80,7 @@ export function RightPanel({ primaryMode, onSelectPage }: RightPanelProps) {
   }
 
   const showTabs = contextAgentId !== null;
-  const tabs: RightTab[] = ['agent-info', 'activity-feed'];
+  const tabs: RightTab[] = ['agent-info', 'activity-feed', 'debug'];
 
   return (
     <aside className={styles.panel}>
@@ -82,7 +92,7 @@ export function RightPanel({ primaryMode, onSelectPage }: RightPanelProps) {
               className={`${styles.tab} ${activeTab === tab ? styles.tabActive : ''}`}
               onClick={() => setActiveTab(tab)}
             >
-              {tab === 'agent-info' ? 'agent info' : 'activity feed'}
+              {TAB_LABELS[tab]}
             </button>
           ))}
         </div>
@@ -92,13 +102,20 @@ export function RightPanel({ primaryMode, onSelectPage }: RightPanelProps) {
           <div className={styles.empty}>Select an agent or card</div>
         )}
         {contextAgentId && activeTab === 'agent-info' && (
-          <AgentInfo agentId={contextAgentId} />
+          <AgentInfo
+            agentId={contextAgentId}
+            onEditClaudeMd={onEditClaudeMd}
+            onViewBoilerplate={onViewBoilerplate}
+          />
         )}
         {contextAgentId && activeTab === 'activity-feed' && contextRunId && (
           <ActivityFeed agentId={contextAgentId} runId={contextRunId} />
         )}
         {contextAgentId && activeTab === 'activity-feed' && !contextRunId && (
           <div className={styles.empty}>No run selected</div>
+        )}
+        {contextAgentId && activeTab === 'debug' && (
+          <DebugPanel agentId={contextAgentId} />
         )}
       </div>
     </aside>

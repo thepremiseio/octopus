@@ -1,7 +1,6 @@
 import { useEffect, useSyncExternalStore } from 'react';
 import {
   init,
-  destroy,
   getConnectionStatus,
   onConnectionStatus,
   getVersionError,
@@ -15,7 +14,9 @@ export function useWebSocket(): {
 } {
   useEffect(() => {
     init();
-    return () => destroy();
+    // Don't destroy on unmount — the WebSocket is a singleton that outlives
+    // component lifecycles (React Strict Mode remounts in dev, which would
+    // kill the connection mid-handshake and cause spurious errors).
   }, []);
 
   const connectionStatus = useSyncExternalStore(

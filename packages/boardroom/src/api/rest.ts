@@ -9,6 +9,7 @@ import type {
   GetConversationsResponse,
   GetCostResponse,
   GetCrossBranchMessagesResponse,
+  GetExchangesResponse,
   GetHitlCardResponse,
   GetHitlCardsResponse,
   GetRunActivityResponse,
@@ -202,6 +203,12 @@ export function putSharedSpacePage(pageId: string, body: PutSharedSpacePageReque
 
 export function deleteSharedSpacePage(pageId: string): Promise<void> {
   return request(`/sharedspace/${pageId}`, { method: 'DELETE' });
+}
+
+// ─── Debug / Exchanges ──────────────────────────────────────────────────────
+
+export function getExchanges(agentId: string, runId: string): Promise<GetExchangesResponse> {
+  return request(`/agents/${agentId}/runs/${runId}/exchanges`);
 }
 
 // ─── Cost ────────────────────────────────────────────────────────────────────

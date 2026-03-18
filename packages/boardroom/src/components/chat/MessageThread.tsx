@@ -1,4 +1,5 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
+import { marked } from 'marked';
 import type { ConversationMessage } from '../../types/api';
 import { formatTs } from '../../utils/format';
 import styles from './MessageThread.module.css';
@@ -27,13 +28,30 @@ export function MessageThread({ messages, agentName }: MessageThreadProps) {
             <div className={styles.label}>
               {isCeo ? 'you' : agentName} &middot; {formatTs(msg.ts)}
             </div>
-            <div className={`${styles.bubble} ${isCeo ? styles.ceoBubble : styles.agentBubble}`}>
-              {msg.content}
-            </div>
+            {isCeo ? (
+              <div className={`${styles.bubble} ${styles.ceoBubble}`}>
+                {msg.content}
+              </div>
+            ) : (
+              <AgentBubble content={msg.content} />
+            )}
           </div>
         );
       })}
       <div ref={bottomRef} />
     </div>
+  );
+}
+
+function AgentBubble({ content }: { content: string }) {
+  const html = useMemo(
+    () => marked.parse(content, { async: false }) as string,
+    [content],
+  );
+  return (
+    <div
+      className={`${styles.bubble} ${styles.agentBubble} ${styles.markdown}`}
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
   );
 }

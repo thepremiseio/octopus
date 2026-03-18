@@ -183,6 +183,13 @@ export function init(): void {
   connect();
 }
 
+/** Send a JSON message to the server over the WebSocket */
+export function send(msg: Record<string, unknown>): void {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify(msg));
+  }
+}
+
 export function destroy(): void {
   if (!initialized) return;
   initialized = false;

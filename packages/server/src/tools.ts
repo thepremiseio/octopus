@@ -230,6 +230,7 @@ export function sharedspaceWrite(
   // Invalidate cached indices for all agents whose readable scope includes this page
   invalidateIndicesForPageOwner(ownerAgentId);
 
+  const lastSlash = pageId.lastIndexOf('/');
   broadcast('sharedspace.page.updated', {
     page_id: pageId,
     title: content.title,
@@ -237,6 +238,8 @@ export function sharedspaceWrite(
     owner_agent_id: ownerAgentId,
     updated_by_agent_id: agentId,
     operation: created ? 'created' : 'updated',
+    parent_id: lastSlash > 0 ? pageId.slice(0, lastSlash) : null,
+    depth: pageId.split('/').length - 1,
   });
 
   const outcome = created ? 'Page created' : 'Page updated';

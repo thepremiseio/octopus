@@ -233,6 +233,21 @@ function createSchema(database: Database.Database): void {
       FOREIGN KEY (recipient_agent_id) REFERENCES agents(agent_id)
     );
     CREATE INDEX IF NOT EXISTS idx_inbox_recipient ON inbox_messages(recipient_agent_id, read);
+
+    -- Octopus: LLM exchanges (debug inspector)
+    CREATE TABLE IF NOT EXISTS llm_exchanges (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      run_id TEXT NOT NULL,
+      agent_id TEXT NOT NULL,
+      exchange_index INTEGER NOT NULL,
+      messages_json TEXT NOT NULL,
+      response_json TEXT,
+      tokens_in INTEGER NOT NULL DEFAULT 0,
+      tokens_out INTEGER NOT NULL DEFAULT 0,
+      ts INTEGER NOT NULL,
+      FOREIGN KEY (agent_id) REFERENCES agents(agent_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_llm_exchanges_run ON llm_exchanges(run_id, exchange_index);
   `);
 
   // Add context_mode column if it doesn't exist (migration for existing DBs)
@@ -1029,6 +1044,59 @@ export function getActionCountInWindow(
   return row.cnt;
 }
 
+// --- Octopus: LLM exchanges (debug inspector) ---
+
+export interface LlmExchangeRow {
+  id: number;
+  run_id: string;
+  agent_id: string;
+  exchange_index: number;
+  messages_json: string;
+  response_json: string | null;
+  tokens_in: number;
+  tokens_out: number;
+  ts: number;
+}
+
+export function insertLlmExchange(entry: {
+  run_id: string;
+  agent_id: string;
+  exchange_index: number;
+  messages_json: string;
+  response_json: string | null;
+  tokens_in: number;
+  tokens_out: number;
+  ts: number;
+}): number {
+  const result = db
+    .prepare(
+      `INSERT INTO llm_exchanges (run_id, agent_id, exchange_index, messages_json, response_json, tokens_in, tokens_out, ts)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      entry.run_id,
+      entry.agent_id,
+      entry.exchange_index,
+      entry.messages_json,
+      entry.response_json,
+      entry.tokens_in,
+      entry.tokens_out,
+      entry.ts,
+    );
+  return result.lastInsertRowid as number;
+}
+
+export function getLlmExchangesForRun(
+  agentId: string,
+  runId: string,
+): LlmExchangeRow[] {
+  return db
+    .prepare(
+      'SELECT * FROM llm_exchanges WHERE agent_id = ? AND run_id = ? ORDER BY exchange_index',
+    )
+    .all(agentId, runId) as LlmExchangeRow[];
+}
+
 // --- Octopus: Agent runs ---
 
 export interface AgentRunRow {
@@ -1147,11 +1215,10 @@ export function upsertSharedSpacePage(
   const depth = pageId.split('/').length - 1;
 
   if (existing) {
-    // Update — owner cannot change
     db.prepare(
-      `UPDATE sharedspace_pages SET title = ?, summary = ?, updated_by = ?, updated_ts = ?, body = ?
+      `UPDATE sharedspace_pages SET title = ?, summary = ?, owner_agent_id = ?, updated_by = ?, updated_ts = ?, body = ?
        WHERE page_id = ?`,
-    ).run(title, summary, updatedBy, now, body, pageId);
+    ).run(title, summary, ownerAgentId, updatedBy, now, body, pageId);
     return { created: false };
   } else {
     db.prepare(

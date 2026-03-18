@@ -2,6 +2,11 @@ import { create } from 'zustand';
 import type { SharedSpacePage, SharedSpacePageFull } from '../types/api';
 import { on } from '../api/websocket';
 
+/** Sort pages into tree order: parent before children, siblings alphabetically. */
+function sortPagesTree(pages: SharedSpacePage[]): SharedSpacePage[] {
+  return [...pages].sort((a, b) => a.page_id.localeCompare(b.page_id));
+}
+
 interface SharedSpaceState {
   pages: SharedSpacePage[];
   currentPage: SharedSpacePageFull | null;
@@ -19,17 +24,19 @@ export const useSharedSpaceStore = create<SharedSpaceState>((set) => ({
   currentPage: null,
   recentlyUpdated: new Set(),
 
-  seedPageIndex: (pages) => set({ pages }),
+  seedPageIndex: (pages) => set({ pages: sortPagesTree(pages) }),
 
   upsertPageMeta: (page) =>
     set((state) => {
       const idx = state.pages.findIndex((p) => p.page_id === page.page_id);
+      let next: SharedSpacePage[];
       if (idx >= 0) {
-        const next = [...state.pages];
+        next = [...state.pages];
         next[idx] = page;
-        return { pages: next };
+      } else {
+        next = [...state.pages, page];
       }
-      return { pages: [...state.pages, page] };
+      return { pages: sortPagesTree(next) };
     }),
 
   deletePage: (pageId) =>
@@ -62,8 +69,8 @@ export function initSharedSpaceSubscriptions(): void {
         owner_agent_id: payload.owner_agent_id,
         updated_by_agent_id: payload.updated_by_agent_id,
         updated_ts: Date.now(),
-        parent_id: null, // Will be reconciled on full fetch
-        depth: 0,
+        parent_id: payload.parent_id ?? null,
+        depth: payload.depth ?? 0,
       });
     }
     useSharedSpaceStore.getState().markRecentlyUpdated(payload.page_id);

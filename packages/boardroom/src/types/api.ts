@@ -151,6 +151,18 @@ export interface CostAgent {
   cost_eur: number;
 }
 
+// ─── Debug / LLM exchanges ──────────────────────────────────────────────────
+
+export interface LlmExchange {
+  run_id: string;
+  exchange_index: number;
+  messages_json: string;
+  response_json: string | null;
+  tokens_in: number;
+  tokens_out: number;
+  ts: number;
+}
+
 // ─── WebSocket envelope ──────────────────────────────────────────────────────
 
 export interface WsEnvelope<T = unknown> {
@@ -319,6 +331,8 @@ export interface SharedSpacePageUpdatedPayload {
   owner_agent_id: string;
   updated_by_agent_id: string;
   operation: SharedSpaceOperation;
+  parent_id: string | null;
+  depth: number;
 }
 
 export interface InboxMessageDeliveredPayload {
@@ -328,6 +342,17 @@ export interface InboxMessageDeliveredPayload {
   from_agent_name: string;
   subject: string;
   cross_branch: boolean;
+}
+
+export interface DebugExchangeRecordedPayload {
+  agent_id: string;
+  run_id: string;
+  exchange_index: number;
+  messages_json: string;
+  response_json: string | null;
+  tokens_in: number;
+  tokens_out: number;
+  ts: number;
 }
 
 // ─── WS event type → payload mapping ────────────────────────────────────────
@@ -353,6 +378,7 @@ export interface WsEventMap {
   'cost.updated': CostUpdatedPayload;
   'sharedspace.page.updated': SharedSpacePageUpdatedPayload;
   'inbox.message.delivered': InboxMessageDeliveredPayload;
+  'debug.exchange.recorded': DebugExchangeRecordedPayload;
 }
 
 export type WsEventType = keyof WsEventMap;
@@ -494,6 +520,12 @@ export interface GetCostResponse {
   to_ts: number;
   total_eur: number;
   agents: CostAgent[];
+}
+
+export interface GetExchangesResponse {
+  run_id: string;
+  agent_id: string;
+  exchanges: LlmExchange[];
 }
 
 // ─── REST error envelope ─────────────────────────────────────────────────────

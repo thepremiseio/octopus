@@ -2,9 +2,8 @@
  * Octopus Boardroom — WebSocket + REST API server
  * Replaces the WhatsApp channel with a local dashboard API.
  */
-import { createHash } from 'crypto';
 import http from 'http';
-import { Duplex } from 'stream';
+import { WebSocketServer, WebSocket as WsWebSocket } from 'ws';
 
 import {
   addDailyTokenUsage,
@@ -30,6 +29,7 @@ import {
   getDailyTokenUsage,
   getDescendants,
   getHitlCard,
+  getLlmExchangesForRun,
   getOpenHitlCards,
   getPendingCrossBranchMessages,
   getSharedSpaceChildren,
@@ -50,48 +50,55 @@ import {
   broadcast,
   generateId,
   setBroadcastFn,
+  setDebugBroadcastFn,
+  triggerAgentRun,
   type OctopusEvent,
   generateBoilerplate,
 } from '../container-runner.js';
+import { addDebugAgent, removeDebugAgent } from '../debug-state.js';
+import { invalidateIndicesForPageOwner } from '../sharedspace.js';
 import { logger } from '../logger.js';
+import {
+  sharedspaceRead,
+  sharedspaceWrite,
+  sharedspaceList,
+  sendMessage,
+  requestHitl,
+} from '../tools.js';
 
 // --- WebSocket clients ---
 
-interface WsClient {
-  socket: Duplex;
-  alive: boolean;
-}
+const clients: Set<WsWebSocket> = new Set();
 
-const clients: Set<WsClient> = new Set();
+// --- Debug subscriptions: client → set of agent IDs ---
+const debugSubscriptions = new Map<WsWebSocket, Set<string>>();
 
-function wsFrameEncode(data: string): Buffer {
-  const payload = Buffer.from(data, 'utf-8');
-  const len = payload.length;
-  let header: Buffer;
-  if (len < 126) {
-    header = Buffer.alloc(2);
-    header[0] = 0x81; // FIN + text
-    header[1] = len;
-  } else if (len < 65536) {
-    header = Buffer.alloc(4);
-    header[0] = 0x81;
-    header[1] = 126;
-    header.writeUInt16BE(len, 2);
-  } else {
-    header = Buffer.alloc(10);
-    header[0] = 0x81;
-    header[1] = 127;
-    header.writeBigUInt64BE(BigInt(len), 2);
+/** Get the set of agent IDs a client is subscribed to for debug */
+function getDebugSubs(client: WsWebSocket): Set<string> {
+  let subs = debugSubscriptions.get(client);
+  if (!subs) {
+    subs = new Set();
+    debugSubscriptions.set(client, subs);
   }
-  return Buffer.concat([header, payload]);
+  return subs;
 }
 
-function wsSend(client: WsClient, data: string): void {
-  try {
-    if (!client.socket.writable) return;
-    client.socket.write(wsFrameEncode(data));
-  } catch {
-    clients.delete(client);
+/** Send a debug exchange event only to clients subscribed to the agent */
+export function wsBroadcastDebug(agentId: string, event: OctopusEvent): void {
+  const data = JSON.stringify(event);
+  for (const client of clients) {
+    const subs = debugSubscriptions.get(client);
+    if (subs?.has(agentId)) {
+      wsSend(client, data);
+    }
+  }
+}
+
+let wss: WebSocketServer | null = null;
+
+function wsSend(client: WsWebSocket, data: string): void {
+  if (client.readyState === WsWebSocket.OPEN) {
+    client.send(data);
   }
 }
 
@@ -103,29 +110,11 @@ function wsBroadcast(event: OctopusEvent): void {
 }
 
 function wsSendEvent(
-  client: WsClient,
+  client: WsWebSocket,
   type: string,
   payload: Record<string, unknown>,
 ): void {
   wsSend(client, JSON.stringify({ v: 1, type, ts: Date.now(), payload }));
-}
-
-// Handle WebSocket frame parsing (for pong/close from client)
-function handleWsData(client: WsClient, data: Buffer): void {
-  if (data.length < 2) return;
-  const opcode = data[0] & 0x0f;
-  if (opcode === 0x08) {
-    // Close frame
-    try {
-      client.socket.end(Buffer.from([0x88, 0x00]));
-    } catch {
-      /* ignore */
-    }
-    clients.delete(client);
-  } else if (opcode === 0x0a) {
-    // Pong
-    client.alive = true;
-  }
 }
 
 // --- REST helpers ---
@@ -583,6 +572,46 @@ function setupRoutes(): void {
     },
   );
 
+  // --- LLM Exchanges (debug) ---
+
+  addRoute(
+    'GET',
+    '/api/v1/agents/{agent_id}/runs/{run_id}/exchanges',
+    async (_req, res, params) => {
+      const agent = getAgentById(params.agent_id);
+      if (!agent) {
+        return sendError(
+          res,
+          404,
+          'agent_not_found',
+          `No agent with id '${params.agent_id}'`,
+        );
+      }
+      const run = getAgentRun(params.run_id);
+      if (!run || run.agent_id !== params.agent_id) {
+        return sendError(
+          res,
+          404,
+          'run_not_found',
+          `Run '${params.run_id}' not found`,
+        );
+      }
+      const exchanges = getLlmExchangesForRun(params.agent_id, params.run_id);
+      sendJson(res, 200, {
+        run_id: params.run_id,
+        agent_id: params.agent_id,
+        exchanges: exchanges.map((e) => ({
+          exchange_index: e.exchange_index,
+          messages_json: e.messages_json,
+          response_json: e.response_json,
+          tokens_in: e.tokens_in,
+          tokens_out: e.tokens_out,
+          ts: e.ts,
+        })),
+      });
+    },
+  );
+
   // --- Scheduled tasks ---
 
   addRoute(
@@ -865,7 +894,7 @@ function setupRoutes(): void {
         run_id: null,
       });
 
-      // TODO: trigger agent run with this message as prompt
+      triggerAgentRun(params.agent_id, params.conversation_id, body.content);
 
       sendJson(res, 201, {
         message_id: msgId,
@@ -1189,7 +1218,7 @@ function setupRoutes(): void {
       owner_agent_id?: string;
       body?: string;
     };
-    if (!body.title || !body.summary || body.body === undefined) {
+    if (!body.title || body.summary === undefined || body.body === undefined) {
       return sendError(
         res,
         400,
@@ -1225,7 +1254,7 @@ function setupRoutes(): void {
     }
 
     const ownerAgentId = existing
-      ? existing.owner_agent_id
+      ? (body.owner_agent_id || existing.owner_agent_id)
       : body.owner_agent_id!;
     const { created } = upsertSharedSpacePage(
       params.page_id,
@@ -1235,6 +1264,7 @@ function setupRoutes(): void {
       'ceo',
       body.body,
     );
+    invalidateIndicesForPageOwner(ownerAgentId);
 
     const page = getSharedSpacePage(params.page_id)!;
 
@@ -1245,6 +1275,8 @@ function setupRoutes(): void {
       owner_agent_id: ownerAgentId,
       updated_by_agent_id: 'ceo',
       operation: created ? 'created' : 'updated',
+      parent_id: page.parent_id ?? null,
+      depth: page.depth,
     });
 
     sendJson(res, created ? 201 : 200, {
@@ -1281,6 +1313,7 @@ function setupRoutes(): void {
         );
       }
       deleteSharedSpacePage(params.page_id);
+      invalidateIndicesForPageOwner(page.owner_agent_id);
 
       broadcast('sharedspace.page.updated', {
         page_id: params.page_id,
@@ -1335,6 +1368,64 @@ function setupRoutes(): void {
       agents: agentCosts,
     });
   });
+
+  // --- Internal: tool calls from agent containers ---
+
+  addRoute('POST', '/api/v1/internal/tool-call', async (req, res) => {
+    const body = await parseJson(req);
+    const { tool, agent_id, run_id, args } = body as {
+      tool: string;
+      agent_id: string;
+      run_id: string;
+      args: Record<string, unknown>;
+    };
+
+    if (!tool || !agent_id || !run_id) {
+      sendJson(res, 400, { error: 'Missing tool, agent_id, or run_id' });
+      return;
+    }
+
+    try {
+      let result: unknown;
+      switch (tool) {
+        case 'sharedspace_read':
+          result = sharedspaceRead(agent_id, args.page_id as string, run_id);
+          break;
+        case 'sharedspace_write':
+          result = sharedspaceWrite(
+            agent_id,
+            args.page_id as string,
+            args.content as { title: string; summary: string; body: string; owner_agent_id?: string },
+            run_id,
+          );
+          break;
+        case 'sharedspace_list':
+          result = sharedspaceList(agent_id, run_id, args.prefix as string | undefined);
+          break;
+        case 'send_message':
+          result = sendMessage(
+            agent_id,
+            args as { to: string; subject: string; body: string },
+            run_id,
+          );
+          break;
+        case 'request_hitl':
+          result = requestHitl(
+            agent_id,
+            args as { type: 'approval' | 'choice' | 'fyi'; subject: string; context: string; options?: string[]; preference?: number },
+            run_id,
+          );
+          break;
+        default:
+          sendJson(res, 400, { error: `Unknown tool: ${tool}` });
+          return;
+      }
+      sendJson(res, 200, result as Record<string, unknown>);
+    } catch (err) {
+      logger.error({ tool, agent_id, err }, 'Internal tool-call failed');
+      sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) });
+    }
+  });
 }
 
 // --- Helpers ---
@@ -1377,6 +1468,7 @@ export function startDashboardServer(port: number): http.Server {
 
   // Wire up broadcast
   setBroadcastFn(wsBroadcast);
+  setDebugBroadcastFn(wsBroadcastDebug);
 
   server = http.createServer(async (req, res) => {
     // CORS preflight
@@ -1411,70 +1503,81 @@ export function startDashboardServer(port: number): http.Server {
     }
   });
 
-  // WebSocket upgrade handling
+  // WebSocket server — shares the HTTP server via 'upgrade'
+  wss = new WebSocketServer({ noServer: true });
+
   server.on('upgrade', (req, socket, head) => {
     const url = new URL(req.url || '/', `http://localhost:${port}`);
     if (url.pathname !== '/ws') {
       socket.destroy();
       return;
     }
-
-    // Perform WebSocket handshake
-    const key = req.headers['sec-websocket-key'];
-    if (!key) {
-      socket.destroy();
-      return;
-    }
-
-    const acceptKey = createHash('sha1')
-      .update(key + '258EAFA5-E914-47DA-95CA-5AB5DC587AAA')
-      .digest('base64');
-
-    socket.write(
-      'HTTP/1.1 101 Switching Protocols\r\n' +
-        'Upgrade: websocket\r\n' +
-        'Connection: Upgrade\r\n' +
-        `Sec-WebSocket-Accept: ${acceptKey}\r\n` +
-        '\r\n',
-    );
-
-    const client: WsClient = { socket: socket as Duplex, alive: true };
-    clients.add(client);
-
-    // Send connection.ready then connection.state — no events interleaved
-    wsSendEvent(client, 'connection.ready', { server_version: '0.1.0' });
-    wsSendEvent(client, 'connection.state', buildConnectionState());
-
-    socket.on('data', (data: Buffer) => handleWsData(client, data));
-    socket.on('close', () => clients.delete(client));
-    socket.on('error', () => clients.delete(client));
+    wss!.handleUpgrade(req, socket, head, (ws) => {
+      wss!.emit('connection', ws, req);
+    });
   });
 
-  // Heartbeat to detect dead connections
-  setInterval(() => {
-    for (const client of clients) {
-      if (!client.alive) {
-        clients.delete(client);
-        try {
-          client.socket.destroy();
-        } catch {
-          /* ignore */
-        }
-        return;
-      }
-      client.alive = false;
-      // Send ping
+  wss.on('connection', (ws) => {
+    clients.add(ws);
+
+    // Send connection.ready then connection.state — no events interleaved
+    wsSendEvent(ws, 'connection.ready', { server_version: '0.1.0' });
+    wsSendEvent(ws, 'connection.state', buildConnectionState());
+
+    ws.on('message', (raw) => {
       try {
-        if (client.socket.writable) {
-          client.socket.write(Buffer.from([0x89, 0x00])); // ping frame
+        const msg = JSON.parse(raw.toString()) as { type?: string; agent_id?: string };
+        if (msg.type === 'debug.subscribe' && msg.agent_id) {
+          getDebugSubs(ws).add(msg.agent_id);
+          // Track globally so the credential proxy knows to capture
+          addDebugAgent(msg.agent_id);
+          logger.debug({ agent_id: msg.agent_id }, 'Debug subscribed');
+        } else if (msg.type === 'debug.unsubscribe' && msg.agent_id) {
+          getDebugSubs(ws).delete(msg.agent_id);
+          // Only remove from global state if no other clients are subscribed
+          let otherSubscribers = false;
+          for (const [client, subs] of debugSubscriptions) {
+            if (client !== ws && subs.has(msg.agent_id)) {
+              otherSubscribers = true;
+              break;
+            }
+          }
+          if (!otherSubscribers) {
+            removeDebugAgent(msg.agent_id);
+          }
+          logger.debug({ agent_id: msg.agent_id }, 'Debug unsubscribed');
         }
       } catch {
-        clients.delete(client);
+        // Ignore malformed messages
       }
-    }
-  }, 30000);
+    });
 
-  server.listen(port, () => {
+    const cleanupClient = () => {
+      // Remove debug subscriptions; clean up global debug state
+      const subs = debugSubscriptions.get(ws);
+      if (subs) {
+        for (const agentId of subs) {
+          let otherSubscribers = false;
+          for (const [client, clientSubs] of debugSubscriptions) {
+            if (client !== ws && clientSubs.has(agentId)) {
+              otherSubscribers = true;
+              break;
+            }
+          }
+          if (!otherSubscribers) {
+            removeDebugAgent(agentId);
+          }
+        }
+      }
+      clients.delete(ws);
+      debugSubscriptions.delete(ws);
+    };
+
+    ws.on('close', cleanupClient);
+    ws.on('error', cleanupClient);
+  });
+
+  server.listen(port, '0.0.0.0', () => {
     logger.info({ port }, 'Octopus Boardroom API started');
   });
 
@@ -1482,13 +1585,17 @@ export function startDashboardServer(port: number): http.Server {
 }
 
 export function stopDashboardServer(): void {
+  if (wss) {
+    wss.close();
+    wss = null;
+  }
   if (server) {
     server.close();
     server = null;
   }
   for (const client of clients) {
     try {
-      client.socket.destroy();
+      client.close();
     } catch {
       /* ignore */
     }
