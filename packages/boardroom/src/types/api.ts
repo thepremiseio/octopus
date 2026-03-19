@@ -4,7 +4,7 @@ export type AgentStatus = 'idle' | 'active' | 'alert' | 'circuit-breaker';
 
 export type CardType = 'approval' | 'choice' | 'fyi' | 'circuit_breaker';
 
-export type Resolution = 'approved' | 'rejected' | 'option_selected' | 'returned';
+export type Resolution = 'approved' | 'rejected' | 'option_selected' | 'returned' | 'acknowledged';
 
 export type TriggerType = 'chat' | 'inbox' | 'scheduled' | 'hitl_resume' | 'crossbranch_resume';
 
@@ -97,6 +97,7 @@ export interface ActivityEntry {
   tool_category: ToolCategory;
   detail: string;
   outcome: string | null;
+  full_detail: string | null;
   ts: number;
 }
 
@@ -269,6 +270,7 @@ export interface AgentRunActivityPayload {
   tool_category: ToolCategory;
   detail: string;
   outcome: string | null;
+  full_detail: string | null;
 }
 
 export interface AgentCreatedPayload {

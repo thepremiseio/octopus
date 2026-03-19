@@ -88,10 +88,16 @@ function extractResponseFromSSE(raw: string): string | null {
           contentBlocks[parsed.index] = parsed.content_block;
           break;
         case 'content_block_delta':
-          if (parsed.delta?.type === 'text_delta' && contentBlocks[parsed.index]) {
+          if (
+            parsed.delta?.type === 'text_delta' &&
+            contentBlocks[parsed.index]
+          ) {
             const block = contentBlocks[parsed.index] as Record<string, string>;
             block.text = (block.text || '') + parsed.delta.text;
-          } else if (parsed.delta?.type === 'input_json_delta' && contentBlocks[parsed.index]) {
+          } else if (
+            parsed.delta?.type === 'input_json_delta' &&
+            contentBlocks[parsed.index]
+          ) {
             const block = contentBlocks[parsed.index] as Record<string, string>;
             block.input = (block.input || '') + parsed.delta.partial_json;
           }
@@ -137,7 +143,10 @@ function extractResponseFromSSE(raw: string): string | null {
 }
 
 /** Extract token counts from an API response body */
-function extractTokens(responseBody: string): { tokensIn: number; tokensOut: number } {
+function extractTokens(responseBody: string): {
+  tokensIn: number;
+  tokensOut: number;
+} {
   try {
     const parsed = JSON.parse(responseBody) as {
       usage?: { input_tokens?: number; output_tokens?: number };
@@ -185,9 +194,7 @@ export function startCredentialProxy(
         const urlPath = reqUrl.split('?')[0];
         const isMessagesEndpoint =
           req.method === 'POST' && urlPath.endsWith('/v1/messages');
-        const shouldCapture =
-          isMessagesEndpoint && hasRunningDebugAgents();
-
+        const shouldCapture = isMessagesEndpoint && hasRunningDebugAgents();
 
         const headers: Record<string, string | number | string[] | undefined> =
           {
@@ -261,7 +268,8 @@ export function startCredentialProxy(
                   // For SSE streams, reconstruct the final response from
                   // the message_stop event which carries the full message.
                   // For non-streaming JSON, use the body directly.
-                  const responseJson = extractResponseFromSSE(rawResponse) || rawResponse;
+                  const responseJson =
+                    extractResponseFromSSE(rawResponse) || rawResponse;
                   const { tokensIn, tokensOut } = extractTokens(responseJson);
                   const exchangeIndex = nextExchangeIndex(target.agentId);
 

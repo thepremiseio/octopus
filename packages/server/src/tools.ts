@@ -11,6 +11,7 @@
 import {
   appendActivityEntry,
   getAgentById,
+  getOrCreateActiveConversation,
   getAgentPath,
   getSharedSpacePage,
   getAllSharedSpacePages,
@@ -26,6 +27,7 @@ import {
   checkCircuitBreaker,
   generateId,
   getToolCategory,
+  triggerAgentRun,
 } from './container-runner.js';
 import {
   canRead,
@@ -40,6 +42,7 @@ function recordToolCall(
   runId: string,
   toolName: string,
   detail: string,
+  fullDetail?: string,
 ): string {
   const entryId = generateId('entry');
   const category = getToolCategory(toolName);
@@ -55,6 +58,7 @@ function recordToolCall(
     tool_category: category,
     detail: detail.slice(0, 200),
     outcome: null,
+    full_detail: fullDetail ?? null,
   });
 
   broadcast('agent.run.activity', {
@@ -66,6 +70,7 @@ function recordToolCall(
     tool_category: category,
     detail: detail.slice(0, 200),
     outcome: null,
+    full_detail: fullDetail ?? null,
   });
 
   return entryId;
@@ -78,6 +83,7 @@ function recordToolResult(
   toolName: string,
   detail: string,
   outcome: string,
+  fullDetail?: string,
 ): void {
   const category = getToolCategory(toolName);
   const ts = Date.now();
@@ -92,6 +98,7 @@ function recordToolResult(
     tool_category: category,
     detail: detail.slice(0, 200),
     outcome,
+    full_detail: fullDetail ?? null,
   });
 
   broadcast('agent.run.activity', {
@@ -103,6 +110,7 @@ function recordToolResult(
     tool_category: category,
     detail: detail.slice(0, 200),
     outcome,
+    full_detail: fullDetail ?? null,
   });
 }
 
@@ -193,6 +201,7 @@ export function sharedspaceWrite(
     runId,
     'sharedspace_write',
     `id: ${pageId}, title: ${content.title}`,
+    `Page: ${pageId}\nTitle: ${content.title}\nSummary: ${content.summary}\n\n${content.body}`,
   );
 
   const existing = getSharedSpacePage(pageId);
@@ -332,6 +341,7 @@ export function sendMessage(
     runId,
     'send_message',
     `to: ${args.to}, subject: ${args.subject}`,
+    `To: ${args.to}\nSubject: ${args.subject}\n\n${args.body}`,
   );
 
   const sender = getAgentById(senderAgentId);
@@ -375,6 +385,11 @@ export function sendMessage(
       subject: args.subject,
       cross_branch: false,
     });
+
+    // Trigger recipient agent run with the inbox message as context
+    const conv = getOrCreateActiveConversation(args.to, () => generateId('conv'));
+    const triggerMessage = `[Inbox message from ${sender.agent_name}]\nSubject: ${args.subject}\n\n${args.body}`;
+    triggerAgentRun(args.to, conv.conversation_id, triggerMessage);
 
     recordToolResult(
       senderAgentId,
@@ -458,6 +473,7 @@ export function requestHitl(
     runId,
     'request_hitl',
     `type: ${args.type}, subject: ${args.subject}`,
+    `Type: ${args.type}\nSubject: ${args.subject}\n\n${args.context}${args.options ? '\n\nOptions:\n' + args.options.map((o, i) => `  ${i + 1}. ${o}`).join('\n') : ''}${args.preference !== undefined ? `\n\nAgent preference: option ${(args.preference ?? 0) + 1}` : ''}`,
   );
 
   const agent = getAgentById(agentId);

@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { HitlCard, CrossBranchMessage } from '../types/api';
 import { on } from '../api/websocket';
+import { useAgentsStore } from './agents';
 
 export type SelectedItem =
   | { kind: 'hitl'; cardId: string }
@@ -80,7 +81,14 @@ export function initQueuesSubscriptions(): void {
   });
 
   on('hitl.card.resolved', (payload) => {
+    const { hitlCards } = useQueuesStore.getState();
+    const card = hitlCards.find((c) => c.card_id === payload.card_id);
     useQueuesStore.getState().resolveCard(payload.card_id);
+    // Decrement badge if the card was still in our local list
+    // (avoids double-decrement when optimistic removal already ran)
+    if (card) {
+      useAgentsStore.getState().updateBadge(payload.agent_id, -1);
+    }
   });
 
   on('crossbranch.message.arrived', (payload, ts) => {

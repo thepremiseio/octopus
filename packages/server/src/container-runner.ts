@@ -44,6 +44,7 @@ import {
   getUnreadInboxMessages,
   insertHitlCard,
   markInboxMessagesRead,
+  pruneOldRuns,
   updateAgentStatus,
   type AgentRow,
 } from './db.js';
@@ -86,14 +87,22 @@ export function broadcastDebug(
 
 // --- Octopus: Agent run trigger ---
 
-type RunAgentFn = (agentId: string, conversationId: string, message: string) => void;
+type RunAgentFn = (
+  agentId: string,
+  conversationId: string,
+  message: string,
+) => void;
 let runAgentFn: RunAgentFn = () => {};
 
 export function setRunAgentFn(fn: RunAgentFn): void {
   runAgentFn = fn;
 }
 
-export function triggerAgentRun(agentId: string, conversationId: string, message: string): void {
+export function triggerAgentRun(
+  agentId: string,
+  conversationId: string,
+  message: string,
+): void {
   runAgentFn(agentId, conversationId, message);
 }
 
@@ -607,19 +616,27 @@ export async function runContainerAgent(
         boilerplate += `Direct reports: ${children.map((c) => c.agent_name).join(', ')}\n`;
       }
       boilerplate += '\n## Instructions\n\n';
-      boilerplate += '- **Escalation:** If you hit a decision you cannot make alone, escalate to your manager.\n';
-      boilerplate += '- **Inbox:** Process unread inbox messages before your main task.\n';
-      boilerplate += '- **Approvals:** See SharedSpace approval policy for when approval is required.\n';
+      boilerplate +=
+        '- **Escalation:** If you hit a decision you cannot make alone, escalate to your manager.\n';
+      boilerplate +=
+        '- **Inbox:** Process unread inbox messages before your main task.\n';
+      boilerplate +=
+        '- **Approvals:** See SharedSpace approval policy for when approval is required.\n';
       boilerplate += '\n## Available Tools\n\n';
       boilerplate += '- `sharedspace_read(id)` — Read a SharedSpace page\n';
-      boilerplate += '- `sharedspace_write(id, content)` — Write a SharedSpace page\n';
+      boilerplate +=
+        '- `sharedspace_write(id, content)` — Write a SharedSpace page\n';
       boilerplate += '- `sharedspace_list(prefix?)` — List SharedSpace pages\n';
-      boilerplate += '- `send_message(to, subject, body)` — Send a message to another agent\n';
-      boilerplate += '- `request_hitl(type, subject, context, options?, preference?)` — Request CEO input\n';
+      boilerplate +=
+        '- `send_message(to, subject, body)` — Send a message to another agent\n';
+      boilerplate +=
+        '- `request_hitl(type, subject, context, options?, preference?)` — Request CEO input\n';
 
       const unread = getUnreadInboxMessages(input.groupFolder);
       if (unread.length > 0) {
-        boilerplate = `**You have ${unread.length} unread inbox message(s). Process these before your main task.**\n\n` + boilerplate;
+        boilerplate =
+          `**You have ${unread.length} unread inbox message(s). Process these before your main task.**\n\n` +
+          boilerplate;
       }
 
       const ssIndex = ensureCachedIndex(input.groupFolder);
@@ -628,7 +645,10 @@ export async function runContainerAgent(
         parts.push('## SharedSpace Index\n\n' + ssIndex);
       }
 
-      fs.writeFileSync(claudeMdPath, original + BOILERPLATE_MARKER + parts.join('\n\n'));
+      fs.writeFileSync(
+        claudeMdPath,
+        original + BOILERPLATE_MARKER + parts.join('\n\n'),
+      );
     }
   }
 
@@ -659,6 +679,27 @@ export async function runContainerAgent(
     },
     'Spawning container agent',
   );
+
+  // Mark agent as active and record run start
+  const agentId = input.groupFolder;
+  const runId = input.runId || generateId('run');
+  const prevAgent = getAgentById(agentId);
+  if (prevAgent && prevAgent.status !== 'active') {
+    updateAgentStatus(agentId, 'active');
+    broadcast('agent.status.changed', {
+      agent_id: agentId,
+      status: 'active',
+      previous_status: prevAgent.status,
+    });
+  }
+  createAgentRun(runId, agentId, 'conversation');
+  pruneOldRuns(agentId, 10);
+  broadcast('agent.run.started', {
+    agent_id: agentId,
+    run_id: runId,
+    trigger_type: 'conversation',
+    trigger_detail: null,
+  });
 
   const logsDir = path.join(groupDir, 'logs');
   fs.mkdirSync(logsDir, { recursive: true });
@@ -792,6 +833,27 @@ export async function runContainerAgent(
     container.on('close', (code) => {
       clearTimeout(timeout);
       const duration = Date.now() - startTime;
+
+      // Record run completion
+      const exitReason = code === 0 ? 'completed' : (timedOut ? 'timeout' : 'error');
+      completeAgentRun(runId, exitReason, 0);
+      broadcast('agent.run.completed', {
+        agent_id: agentId,
+        run_id: runId,
+        exit_reason: exitReason,
+        total_tokens: null,
+      });
+
+      // Mark agent as idle (unless circuit-breaker or alert set it otherwise)
+      const curAgent = getAgentById(agentId);
+      if (curAgent && curAgent.status === 'active') {
+        updateAgentStatus(agentId, 'idle');
+        broadcast('agent.status.changed', {
+          agent_id: agentId,
+          status: 'idle',
+          previous_status: 'active',
+        });
+      }
 
       if (timedOut) {
         const ts = new Date().toISOString().replace(/[:.]/g, '-');

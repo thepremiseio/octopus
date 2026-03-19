@@ -71,7 +71,7 @@ export function ChatMode() {
   }
 
   const activeConv = convList.find((c) => c.conversation_id === convId);
-  const isReadOnly = activeConv ? !activeConv.active : false;
+  const isArchived = activeConv ? !activeConv.active : false;
 
   return (
     <div className={styles.chat}>
@@ -86,7 +86,7 @@ export function ChatMode() {
             >
               {convList.map((c) => (
                 <option key={c.conversation_id} value={c.conversation_id}>
-                  {formatTs(c.started_ts)} — {c.preview || 'New conversation'}
+                  {formatTs(c.started_ts)}{c.active ? '' : ' (archived)'} — {c.preview || 'New conversation'}
                 </option>
               ))}
             </select>
@@ -96,8 +96,11 @@ export function ChatMode() {
           + new
         </button>
       </div>
+      {isArchived && (
+        <div className={styles.archivedBanner}>Archived conversation</div>
+      )}
       <MessageThread messages={messageList} agentName={agent.agent_name} />
-      <ChatInput disabled={(!isIdle && !!convId) || isReadOnly} onSend={(c) => void handleSend(c)} />
+      <ChatInput disabled={!isIdle && !!convId} onSend={(c) => void handleSend(c)} />
     </div>
   );
 }

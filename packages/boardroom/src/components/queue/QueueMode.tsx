@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { useQueuesStore } from '../../store/queues';
 import type { SelectedItem } from '../../store/queues';
 import { ApprovalCard } from './ApprovalCard';
@@ -12,12 +13,31 @@ export function QueueMode() {
   const selectedItem = useQueuesStore((s) => s.selectedItem);
   const setSelectedItem = useQueuesStore((s) => s.setSelectedItem);
 
-  const decisionCards = hitlCards.filter(
-    (c) => c.card_type === 'approval' || c.card_type === 'choice' || c.card_type === 'circuit_breaker',
-  );
-  const fyiCards = hitlCards.filter((c) => c.card_type === 'fyi');
+  const decisionCards = [...hitlCards]
+    .filter((c) => c.card_type === 'approval' || c.card_type === 'choice' || c.card_type === 'circuit_breaker')
+    .sort((a, b) => a.created_ts - b.created_ts);
+  const sortedCrossBranch = [...crossBranchMessages].sort((a, b) => a.arrived_ts - b.arrived_ts);
+  const fyiCards = [...hitlCards]
+    .filter((c) => c.card_type === 'fyi')
+    .sort((a, b) => a.created_ts - b.created_ts);
 
-  const isEmpty = decisionCards.length === 0 && crossBranchMessages.length === 0 && fyiCards.length === 0;
+  const isEmpty = decisionCards.length === 0 && sortedCrossBranch.length === 0 && fyiCards.length === 0;
+
+  // Auto-select the first (oldest) item when nothing is selected
+  const didAutoSelect = useRef(false);
+  useEffect(() => {
+    if (isEmpty) return;
+    if (selectedItem) { didAutoSelect.current = true; return; }
+    if (didAutoSelect.current) return;
+    const first: SelectedItem | null =
+      decisionCards.length > 0 ? { kind: 'hitl', cardId: decisionCards[0]!.card_id } :
+      sortedCrossBranch.length > 0 ? { kind: 'crossbranch', messageId: sortedCrossBranch[0]!.message_id } :
+      fyiCards.length > 0 ? { kind: 'hitl', cardId: fyiCards[0]!.card_id } : null;
+    if (first) {
+      didAutoSelect.current = true;
+      setSelectedItem(first);
+    }
+  }, [isEmpty, selectedItem, decisionCards, sortedCrossBranch, fyiCards, setSelectedItem]);
 
   function isSelected(item: SelectedItem): boolean {
     if (!selectedItem || !item) return false;
@@ -68,13 +88,13 @@ export function QueueMode() {
         </>
       )}
 
-      {crossBranchMessages.length > 0 && (
+      {sortedCrossBranch.length > 0 && (
         <>
           <div className={styles.sectionLabel}>
             <span>Cross-branch messages</span>
             <span className={styles.sectionRule} />
           </div>
-          {crossBranchMessages.map((msg) => {
+          {sortedCrossBranch.map((msg) => {
             const sel: SelectedItem = { kind: 'crossbranch', messageId: msg.message_id };
             return (
               <CrossBranchCard

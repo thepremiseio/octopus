@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import { marked } from 'marked';
 import type { HitlCard } from '../../types/api';
 import { postHitlDecision } from '../../api/rest';
 import { useQueuesStore } from '../../store/queues';
@@ -16,6 +17,10 @@ export function ChoiceCard({ card, selected, onSelect }: ChoiceCardProps) {
   const [showNote, setShowNote] = useState(false);
   const [note, setNote] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const contextHtml = useMemo(
+    () => marked.parse(card.context, { async: false, breaks: true }) as string,
+    [card.context],
+  );
 
   async function handleSelectOption(index: number) {
     useQueuesStore.getState().resolveCard(card.card_id);
@@ -54,12 +59,12 @@ export function ChoiceCard({ card, selected, onSelect }: ChoiceCardProps) {
           <span className={styles.timestamp}>{formatTs(card.created_ts)}</span>
         </div>
         <div className={styles.subject}>{card.subject}</div>
-        <div className={styles.context}>
-          {card.context}
-          {card.preference !== null && (
-            <span className={styles.preferenceHighlight}> (agent prefers option {card.preference + 1})</span>
-          )}
-        </div>
+        <div className={`${styles.context} ${styles.markdown}`} dangerouslySetInnerHTML={{ __html: contextHtml }} />
+        {card.preference !== null && (
+          <div className={styles.context}>
+            <span className={styles.preferenceHighlight}>(agent prefers option {card.preference + 1})</span>
+          </div>
+        )}
         {error && <div style={{ color: 'var(--red)', fontSize: 'var(--font-size-label)', marginBottom: 4 }}>{error}</div>}
         {card.options && (
           <div className={styles.options}>

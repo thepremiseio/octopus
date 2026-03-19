@@ -8,6 +8,7 @@ import type {
 import { on } from '../api/websocket';
 
 interface AgentNode extends Agent {
+  last_run_id?: string | null;
   last_run_exit_reason?: ExitReason | null;
 }
 
@@ -22,7 +23,7 @@ interface AgentsState {
   updateStatus: (agentId: string, status: AgentStatus) => void;
   updateBadge: (agentId: string, delta: number) => void;
   updateCost: (agentId: string, costTodayEur: number) => void;
-  updateLastRun: (agentId: string, ts: number, exitReason?: ExitReason | null) => void;
+  updateLastRun: (agentId: string, ts: number, runId?: string, exitReason?: ExitReason | null) => void;
   setSelectedAgent: (agentId: string | null) => void;
 }
 
@@ -109,11 +110,12 @@ export const useAgentsStore = create<AgentsState>((set) => ({
       })),
     })),
 
-  updateLastRun: (agentId, ts, exitReason) =>
+  updateLastRun: (agentId, ts, runId, exitReason) =>
     set((state) => ({
       agents: updateAgent(state.agents, agentId, (a) => ({
         ...a,
         last_run_ts: ts,
+        ...(runId !== undefined ? { last_run_id: runId } : {}),
         ...(exitReason !== undefined ? { last_run_exit_reason: exitReason } : {}),
       })),
     })),
@@ -151,11 +153,11 @@ export function initAgentsSubscriptions(): void {
   });
 
   on('agent.run.started', (payload, ts) => {
-    useAgentsStore.getState().updateLastRun(payload.agent_id, ts);
+    useAgentsStore.getState().updateLastRun(payload.agent_id, ts, payload.run_id);
   });
 
   on('agent.run.completed', (payload, ts) => {
-    useAgentsStore.getState().updateLastRun(payload.agent_id, ts, payload.exit_reason);
+    useAgentsStore.getState().updateLastRun(payload.agent_id, ts, payload.run_id, payload.exit_reason);
   });
 
   on('cost.updated', (payload) => {

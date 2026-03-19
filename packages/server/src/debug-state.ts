@@ -73,7 +73,10 @@ export function hasRunningDebugAgents(): boolean {
  * For the common case (one agent being debugged), this unambiguously
  * identifies which agent a proxy-captured exchange belongs to.
  */
-export function getSingleRunningDebugAgent(): { agentId: string; runId: string } | null {
+export function getSingleRunningDebugAgent(): {
+  agentId: string;
+  runId: string;
+} | null {
   if (runningDebugAgents.size !== 1) return null;
   const [agentId, runId] = runningDebugAgents.entries().next().value!;
   return { agentId, runId };

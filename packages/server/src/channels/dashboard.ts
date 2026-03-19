@@ -17,6 +17,7 @@ import {
   discardCrossBranchMessageArray,
   getActiveConversation,
   getAgentById,
+  getOrCreateActiveConversation,
   getAgentPath,
   getAgentRun,
   getAgentRuns,
@@ -861,14 +862,6 @@ function setupRoutes(): void {
           `Conversation '${params.conversation_id}' not found`,
         );
       }
-      if (conv.active !== 1) {
-        return sendError(
-          res,
-          409,
-          'validation_error',
-          'Conversation is archived',
-        );
-      }
       if (agent.status !== 'idle') {
         return sendError(
           res,
@@ -894,7 +887,7 @@ function setupRoutes(): void {
         run_id: null,
       });
 
-      triggerAgentRun(params.agent_id, params.conversation_id, body.content);
+      triggerAgentRun(params.agent_id, params.conversation_id, `[CEO]: ${body.content}`);
 
       sendJson(res, 201, {
         message_id: msgId,
@@ -1012,29 +1005,53 @@ function setupRoutes(): void {
         note: body.note ?? null,
       });
 
-      // For non-rejected resolutions with message arrays, resume the agent
-      if (body.resolution !== 'rejected' && card.message_array) {
-        // Resume path: rehydrate and start fresh container
-        // This is handled by the runner integration
-        const runId = generateId('run');
-        createAgentRun(
-          runId,
-          card.agent_id,
-          'hitl_resume',
-          `Resumed after ${body.resolution}`,
-        );
-        updateAgentStatus(card.agent_id, 'active');
-        broadcast('agent.status.changed', {
-          agent_id: card.agent_id,
-          status: 'active',
-          previous_status: 'idle',
-        });
-        broadcast('agent.run.started', {
-          agent_id: card.agent_id,
-          run_id: runId,
-          trigger_type: 'hitl_resume',
-          trigger_detail: `Resumed after ${body.resolution}`,
-        });
+      // For non-rejected resolutions, resume the agent
+      if (body.resolution !== 'rejected') {
+        const conv = getOrCreateActiveConversation(card.agent_id, () => generateId('conv'));
+
+        // Build resume message with full context
+        const parts: string[] = [];
+
+        // 1. Prior conversation history
+        const priorMessages = getConversationMessages(conv.conversation_id);
+        if (priorMessages.length > 0) {
+          parts.push('=== Conversation history ===');
+          for (const m of priorMessages) {
+            const role = m.role === 'ceo' ? 'CEO' : 'You';
+            parts.push(`[${role}]: ${m.content}`);
+          }
+          parts.push('');
+        }
+
+        // 2. The original HITL request (what the agent wrote)
+        parts.push(`=== Your ${card.card_type} request ===`);
+        parts.push(`Subject: ${card.subject}`);
+        parts.push(`Context: ${card.context}`);
+        if (card.options) {
+          const opts = JSON.parse(card.options) as string[];
+          parts.push('Options:');
+          opts.forEach((o, i) => parts.push(`  ${i + 1}. ${o}`));
+        }
+        parts.push('');
+
+        // 3. The CEO's decision
+        parts.push('=== CEO decision ===');
+        if (body.resolution === 'approved') {
+          parts.push('Decision: APPROVED');
+        } else if (body.resolution === 'returned') {
+          parts.push(`Decision: RETURNED with instructions`);
+          parts.push(`CEO note: ${body.note}`);
+        } else if (body.resolution === 'option_selected') {
+          const opts = card.options ? JSON.parse(card.options) as string[] : [];
+          const label = opts[body.selected_option!] ?? `option ${body.selected_option}`;
+          parts.push(`Decision: CEO selected option ${(body.selected_option ?? 0) + 1}: ${label}`);
+        } else {
+          parts.push(`Decision: ${body.resolution}`);
+        }
+        parts.push('');
+        parts.push('Continue your work based on the above decision.');
+
+        triggerAgentRun(card.agent_id, conv.conversation_id, parts.join('\n'));
       }
 
       sendJson(res, 200, {
@@ -1124,15 +1141,21 @@ function setupRoutes(): void {
 
       // Resume sender
       if (msg.message_array) {
-        const runId = generateId('run');
-        createAgentRun(runId, msg.sender_agent_id, 'crossbranch_resume');
-        broadcast('agent.run.started', {
-          agent_id: msg.sender_agent_id,
-          run_id: runId,
-          trigger_type: 'crossbranch_resume',
-          trigger_detail: null,
-        });
+        const senderConv = getOrCreateActiveConversation(msg.sender_agent_id, () => generateId('conv'));
+        triggerAgentRun(
+          msg.sender_agent_id,
+          senderConv.conversation_id,
+          `Your cross-branch message to ${recipient?.agent_name || msg.recipient_agent_id} (subject: "${msg.subject}") has been approved and delivered by the CEO. You may continue.`,
+        );
       }
+
+      // Wake recipient with the delivered message
+      const recipientConv = getOrCreateActiveConversation(msg.recipient_agent_id, () => generateId('conv'));
+      triggerAgentRun(
+        msg.recipient_agent_id,
+        recipientConv.conversation_id,
+        `[Inbox message from ${sender?.agent_name || msg.sender_agent_id}]\nSubject: ${msg.subject}\n\n${msg.body}`,
+      );
 
       sendNoContent(res);
     },
@@ -1254,7 +1277,7 @@ function setupRoutes(): void {
     }
 
     const ownerAgentId = existing
-      ? (body.owner_agent_id || existing.owner_agent_id)
+      ? body.owner_agent_id || existing.owner_agent_id
       : body.owner_agent_id!;
     const { created } = upsertSharedSpacePage(
       params.page_id,
@@ -1395,12 +1418,21 @@ function setupRoutes(): void {
           result = sharedspaceWrite(
             agent_id,
             args.page_id as string,
-            args.content as { title: string; summary: string; body: string; owner_agent_id?: string },
+            args.content as {
+              title: string;
+              summary: string;
+              body: string;
+              owner_agent_id?: string;
+            },
             run_id,
           );
           break;
         case 'sharedspace_list':
-          result = sharedspaceList(agent_id, run_id, args.prefix as string | undefined);
+          result = sharedspaceList(
+            agent_id,
+            run_id,
+            args.prefix as string | undefined,
+          );
           break;
         case 'send_message':
           result = sendMessage(
@@ -1412,7 +1444,13 @@ function setupRoutes(): void {
         case 'request_hitl':
           result = requestHitl(
             agent_id,
-            args as { type: 'approval' | 'choice' | 'fyi'; subject: string; context: string; options?: string[]; preference?: number },
+            args as {
+              type: 'approval' | 'choice' | 'fyi';
+              subject: string;
+              context: string;
+              options?: string[];
+              preference?: number;
+            },
             run_id,
           );
           break;
@@ -1423,7 +1461,9 @@ function setupRoutes(): void {
       sendJson(res, 200, result as Record<string, unknown>);
     } catch (err) {
       logger.error({ tool, agent_id, err }, 'Internal tool-call failed');
-      sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) });
+      sendJson(res, 500, {
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   });
 }
@@ -1454,6 +1494,8 @@ function getValidResolutions(cardType: string): string[] {
       return ['approved', 'rejected', 'returned'];
     case 'choice':
       return ['option_selected', 'returned'];
+    case 'fyi':
+      return ['acknowledged'];
     default:
       return [];
   }
@@ -1526,7 +1568,10 @@ export function startDashboardServer(port: number): http.Server {
 
     ws.on('message', (raw) => {
       try {
-        const msg = JSON.parse(raw.toString()) as { type?: string; agent_id?: string };
+        const msg = JSON.parse(raw.toString()) as {
+          type?: string;
+          agent_id?: string;
+        };
         if (msg.type === 'debug.subscribe' && msg.agent_id) {
           getDebugSubs(ws).add(msg.agent_id);
           // Track globally so the credential proxy knows to capture

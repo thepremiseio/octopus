@@ -47,14 +47,17 @@ export function useKeyboard({ onSetMode, onOpenCommandPalette, onNewConversation
       // Up/Down: move focus
       if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
         e.preventDefault();
+        const sortedDecision = [...hitlCards]
+          .filter((c) => c.card_type !== 'fyi')
+          .sort((a, b) => a.created_ts - b.created_ts);
+        const sortedCb = [...crossBranchMessages].sort((a, b) => a.arrived_ts - b.arrived_ts);
+        const sortedFyi = [...hitlCards]
+          .filter((c) => c.card_type === 'fyi')
+          .sort((a, b) => a.created_ts - b.created_ts);
         const allItems: SelectedItem[] = [
-          ...hitlCards
-            .filter((c) => c.card_type !== 'fyi')
-            .map((c): SelectedItem => ({ kind: 'hitl', cardId: c.card_id })),
-          ...crossBranchMessages.map((m): SelectedItem => ({ kind: 'crossbranch', messageId: m.message_id })),
-          ...hitlCards
-            .filter((c) => c.card_type === 'fyi')
-            .map((c): SelectedItem => ({ kind: 'hitl', cardId: c.card_id })),
+          ...sortedDecision.map((c): SelectedItem => ({ kind: 'hitl', cardId: c.card_id })),
+          ...sortedCb.map((m): SelectedItem => ({ kind: 'crossbranch', messageId: m.message_id })),
+          ...sortedFyi.map((c): SelectedItem => ({ kind: 'hitl', cardId: c.card_id })),
         ];
         if (allItems.length === 0) return;
 
@@ -85,12 +88,16 @@ export function useKeyboard({ onSetMode, onOpenCommandPalette, onNewConversation
         const card = hitlCards.find((c) => c.card_id === selectedItem.cardId);
         if (!card) return;
 
-        // A: approve/resume
+        // A: approve/resume or acknowledge FYI
         if (e.key === 'a' || e.key === 'A') {
           if (card.card_type === 'approval' || card.card_type === 'circuit_breaker') {
             state.resolveCard(card.card_id);
             useAgentsStore.getState().updateBadge(card.agent_id, -1);
             void postHitlDecision(card.card_id, { resolution: 'approved' });
+          } else if (card.card_type === 'fyi') {
+            state.resolveCard(card.card_id);
+            useAgentsStore.getState().updateBadge(card.agent_id, -1);
+            void postHitlDecision(card.card_id, { resolution: 'acknowledged' });
           }
           return;
         }

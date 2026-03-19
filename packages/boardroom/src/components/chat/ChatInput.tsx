@@ -29,7 +29,7 @@ export function ChatInput({ disabled, onSend }: ChatInputProps) {
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={handleKeyDown}
         disabled={disabled}
-        placeholder={disabled ? 'Agent is busy...' : 'Message...'}
+        placeholder={disabled ? 'Agent is running...' : 'Message...'}
         rows={2}
       />
       <div className={styles.hint}>Enter to send, Shift+Enter for newline</div>

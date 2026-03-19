@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import { marked } from 'marked';
 import type { HitlCard } from '../../types/api';
 import { postHitlDecision } from '../../api/rest';
 import { useQueuesStore } from '../../store/queues';
@@ -16,6 +17,11 @@ export function ApprovalCard({ card, selected, onSelect }: ApprovalCardProps) {
   const [showNote, setShowNote] = useState(false);
   const [note, setNote] = useState('');
   const [error, setError] = useState<string | null>(null);
+
+  const contextHtml = useMemo(
+    () => marked.parse(card.context, { async: false, breaks: true }) as string,
+    [card.context],
+  );
 
   const isCircuitBreaker = card.card_type === 'circuit_breaker';
 
@@ -62,7 +68,7 @@ export function ApprovalCard({ card, selected, onSelect }: ApprovalCardProps) {
           <span className={styles.timestamp}>{formatTs(card.created_ts)}</span>
         </div>
         <div className={styles.subject}>{card.subject}</div>
-        <div className={styles.context}>{card.context}</div>
+        <div className={`${styles.context} ${styles.markdown}`} dangerouslySetInnerHTML={{ __html: contextHtml }} />
         {error && <div style={{ color: 'var(--red)', fontSize: 'var(--font-size-label)', marginBottom: 4 }}>{error}</div>}
         <div className={styles.actions}>
           <button className={styles.btnApprove} onClick={(e) => { e.stopPropagation(); void handleDecision('approved'); }}>

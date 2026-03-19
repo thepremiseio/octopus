@@ -46,7 +46,7 @@ export function AgentTree({ onOpenCostOverview, onSelectAgent }: AgentTreeProps)
               onClick={() => onSelectAgent(agent.agent_id)}
             >
               <StatusDot status={agent.status} />
-              <span className={styles.nodeName}>{agent.agent_name}</span>
+              <span className={styles.nodeName} title={agent.agent_name}>{agent.agent_name}</span>
               <span className={styles.nodeRight}>
                 {agent.open_hitl_cards > 0 ? (
                   <Badge count={agent.open_hitl_cards} />

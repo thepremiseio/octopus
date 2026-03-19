@@ -693,7 +693,7 @@ async function main(): Promise<void> {
 
     const group: RegisteredGroup = {
       name: agent.agent_name,
-      folder: agentId,  // agentId → mounts groups/{agentId}/ which contains CLAUDE.md
+      folder: agentId, // agentId → mounts groups/{agentId}/ which contains CLAUDE.md
       trigger: '',
       added_at: new Date().toISOString(),
       requiresTrigger: false,
@@ -707,45 +707,55 @@ async function main(): Promise<void> {
     const debugRunId = generateId('run');
     setCurrentRun(agentId, debugRunId);
 
-    void runAgent(group, message, conversationId, async (output) => {
-      // Session-update marker (result: null) — nothing to broadcast
-      if (!output.result) return;
-      const text = output.result.replace(/<internal>[\s\S]*?<\/internal>/g, '').trim();
-      if (!text) return;
+    void runAgent(
+      group,
+      message,
+      conversationId,
+      async (output) => {
+        // Session-update marker (result: null) — nothing to broadcast
+        if (!output.result) return;
+        const text = output.result
+          .replace(/<internal>[\s\S]*?<\/internal>/g, '')
+          .trim();
+        if (!text) return;
 
-      const msgId = generateId('msg');
-      const now = Date.now();
-      insertConversationMessage({
-        message_id: msgId,
-        conversation_id: conversationId,
-        agent_id: agentId,
-        role: 'agent',
-        content: text,
-        ts: now,
-        run_id: null,
-      });
+        const msgId = generateId('msg');
+        const now = Date.now();
+        insertConversationMessage({
+          message_id: msgId,
+          conversation_id: conversationId,
+          agent_id: agentId,
+          role: 'agent',
+          content: text,
+          ts: now,
+          run_id: null,
+        });
 
-      broadcast('chat.message.received', {
-        agent_id: agentId,
-        conversation_id: conversationId,
-        message_id: msgId,
-        role: 'agent',
-        content: text,
-        ts: now,
-        run_id: null,
+        broadcast('chat.message.received', {
+          agent_id: agentId,
+          conversation_id: conversationId,
+          message_id: msgId,
+          role: 'agent',
+          content: text,
+          ts: now,
+          run_id: null,
+        });
+      },
+      { singleRun: true, runId: debugRunId },
+    )
+      .then(() => {
+        clearCurrentRun(agentId);
+        // After run, save the session under conversationId for next-turn continuity.
+        // runAgent stored the new session under sessions[agentId] (group.folder).
+        const newSession = sessions[agentId];
+        if (newSession) {
+          sessions[conversationId] = newSession;
+          setSession(conversationId, newSession);
+        }
+      })
+      .catch((err) => {
+        logger.error({ agentId, err }, 'triggerAgentRun failed');
       });
-    }, { singleRun: true, runId: debugRunId }).then(() => {
-      clearCurrentRun(agentId);
-      // After run, save the session under conversationId for next-turn continuity.
-      // runAgent stored the new session under sessions[agentId] (group.folder).
-      const newSession = sessions[agentId];
-      if (newSession) {
-        sessions[conversationId] = newSession;
-        setSession(conversationId, newSession);
-      }
-    }).catch((err) => {
-      logger.error({ agentId, err }, 'triggerAgentRun failed');
-    });
   });
 
   queue.setProcessMessagesFn(processGroupMessages);

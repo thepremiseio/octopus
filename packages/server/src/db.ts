@@ -116,6 +116,7 @@ function createSchema(database: Database.Database): void {
       tool_category TEXT NOT NULL,
       detail TEXT,
       outcome TEXT,
+      full_detail TEXT,
       FOREIGN KEY (agent_id) REFERENCES agents(agent_id)
     );
     CREATE INDEX IF NOT EXISTS idx_activity_agent_run ON activity_feed(agent_id, run_id);
@@ -304,6 +305,15 @@ function createSchema(database: Database.Database): void {
     );
   } catch {
     /* columns already exist */
+  }
+
+  // Add full_detail column to activity_feed (migration for existing DBs)
+  try {
+    database.exec(
+      `ALTER TABLE activity_feed ADD COLUMN full_detail TEXT`,
+    );
+  } catch {
+    /* column already exists */
   }
 }
 
@@ -996,13 +1006,14 @@ export interface ActivityEntry {
   tool_category: string;
   detail: string | null;
   outcome: string | null;
+  full_detail: string | null;
 }
 
 export function appendActivityEntry(entry: Omit<ActivityEntry, 'id'>): number {
   const result = db
     .prepare(
-      `INSERT INTO activity_feed (ts, agent_id, run_id, entry_id, entry_type, tool_name, tool_category, detail, outcome)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO activity_feed (ts, agent_id, run_id, entry_id, entry_type, tool_name, tool_category, detail, outcome, full_detail)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       entry.ts,
@@ -1014,6 +1025,7 @@ export function appendActivityEntry(entry: Omit<ActivityEntry, 'id'>): number {
       entry.tool_category,
       entry.detail,
       entry.outcome,
+      entry.full_detail,
     );
   return result.lastInsertRowid as number;
 }
@@ -1168,6 +1180,25 @@ export function getAgentRun(runId: string): AgentRunRow | undefined {
   return db.prepare('SELECT * FROM agent_runs WHERE run_id = ?').get(runId) as
     | AgentRunRow
     | undefined;
+}
+
+/** Keep only the N most recent runs per agent, deleting older runs and their activity_feed entries. */
+export function pruneOldRuns(agentId: string, keep: number = 10): void {
+  const oldRuns = db
+    .prepare(
+      `SELECT run_id FROM agent_runs WHERE agent_id = ?
+       ORDER BY started_ts DESC LIMIT -1 OFFSET ?`,
+    )
+    .all(agentId, keep) as { run_id: string }[];
+  if (oldRuns.length === 0) return;
+  const ids = oldRuns.map((r) => r.run_id);
+  const placeholders = ids.map(() => '?').join(',');
+  db.prepare(`DELETE FROM activity_feed WHERE run_id IN (${placeholders})`).run(
+    ...ids,
+  );
+  db.prepare(`DELETE FROM agent_runs WHERE run_id IN (${placeholders})`).run(
+    ...ids,
+  );
 }
 
 // --- Octopus: SharedSpace pages ---
@@ -1496,6 +1527,20 @@ export function getActiveConversation(
   return db
     .prepare('SELECT * FROM conversations WHERE agent_id = ? AND active = 1')
     .get(agentId) as ConversationRow | undefined;
+}
+
+/**
+ * Returns the active conversation for an agent, creating one if none exists.
+ * Used by automated triggers (inbox, HITL resume, cross-branch) so they
+ * route into the existing conversation instead of fragmenting history.
+ */
+export function getOrCreateActiveConversation(
+  agentId: string,
+  generateId: () => string,
+): ConversationRow {
+  const existing = getActiveConversation(agentId);
+  if (existing) return existing;
+  return createConversation(generateId(), agentId);
 }
 
 export function insertConversationMessage(msg: ConversationMessageRow): void {

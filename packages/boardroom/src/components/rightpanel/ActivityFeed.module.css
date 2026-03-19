@@ -2,6 +2,18 @@
   padding: 12px;
 }
 
+.runSelect {
+  width: 100%;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-label);
+  color: var(--text-secondary);
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border-default);
+  border-radius: 3px;
+  padding: 4px 6px;
+  margin-bottom: 8px;
+}
+
 .subheader {
   font-family: var(--font-mono);
   font-size: var(--font-size-label);
@@ -10,11 +22,28 @@
 }
 
 .entry {
+  padding: 4px;
+  font-size: var(--font-size-body);
+  border-radius: 3px;
+}
+
+.entry + .entry {
+  border-top: 1px solid var(--bg-surface-2);
+}
+
+.entryHeader {
   display: flex;
   gap: 8px;
-  padding: 2px 0;
-  font-size: var(--font-size-body);
   align-items: baseline;
+}
+
+.entryClickable {
+  cursor: pointer;
+  border-radius: 3px;
+}
+
+.entryClickable:hover {
+  background: var(--bg-surface-2);
 }
 
 .entryTs {
@@ -22,7 +51,6 @@
   font-size: var(--font-size-label);
   color: var(--text-muted);
   flex-shrink: 0;
-  width: 40px;
 }
 
 .toolName {
@@ -43,13 +71,57 @@
   color: var(--text-muted);
 }
 
-.detail {
+.expandHint {
+  font-size: 9px;
+  color: var(--text-muted);
+  margin-left: auto;
+}
+
+.summary {
   font-family: var(--font-sans);
   font-size: var(--font-size-body);
   color: var(--text-secondary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  margin-top: 2px;
+  line-height: 1.4;
+}
+
+.expandedDetail {
+  position: relative;
+  margin-top: 4px;
+  padding: 6px 8px;
+  background: var(--bg-surface-2);
+  border-radius: 4px;
+  border-left: 2px solid var(--text-muted);
+}
+
+.expandedContent {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-label);
+  color: var(--text-secondary);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: calc(1.5em * 20); /* ~20 lines */
+  overflow-y: auto;
+}
+
+.copyBtn {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  background: var(--bg-surface-3);
+  border: 1px solid var(--border-default);
+  border-radius: 3px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-label);
+  padding: 1px 6px;
+  cursor: pointer;
+}
+
+.copyBtn:hover {
+  color: var(--text-primary);
+  border-color: var(--text-muted);
 }
 
 .loading {

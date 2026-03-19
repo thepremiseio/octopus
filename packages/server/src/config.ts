@@ -47,10 +47,7 @@ export const CONTAINER_MAX_OUTPUT_SIZE = parseInt(
   process.env.CONTAINER_MAX_OUTPUT_SIZE || '10485760',
   10,
 ); // 10MB default
-export const NANOCLAW_PORT = parseInt(
-  process.env.NANOCLAW_PORT || '3000',
-  10,
-);
+export const NANOCLAW_PORT = parseInt(process.env.NANOCLAW_PORT || '3000', 10);
 export const CREDENTIAL_PROXY_PORT = parseInt(
   process.env.CREDENTIAL_PROXY_PORT || '3001',
   10,

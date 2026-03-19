@@ -1,5 +1,7 @@
-import { useEffect, useRef } from 'react';
+import { useMemo } from 'react';
+import { marked } from 'marked';
 import type { HitlCard } from '../../types/api';
+import { postHitlDecision } from '../../api/rest';
 import { useQueuesStore } from '../../store/queues';
 import { useAgentsStore } from '../../store/agents';
 import { formatTs } from '../../utils/format';
@@ -12,26 +14,19 @@ interface FyiCardProps {
 }
 
 export function FyiCard({ card, selected, onSelect }: FyiCardProps) {
-  const dismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Auto-dismiss 5 seconds after selection
-  useEffect(() => {
-    if (selected) {
-      dismissTimerRef.current = setTimeout(() => {
-        useQueuesStore.getState().resolveCard(card.card_id);
-        useAgentsStore.getState().updateBadge(card.agent_id, -1);
-      }, 5000);
-    }
-    return () => {
-      if (dismissTimerRef.current) clearTimeout(dismissTimerRef.current);
-    };
-  }, [selected, card.card_id, card.agent_id]);
+  const contextHtml = useMemo(
+    () => marked.parse(card.context, { async: false, breaks: true }) as string,
+    [card.context],
+  );
 
   function handleAcknowledge(e: React.MouseEvent) {
     e.stopPropagation();
-    if (dismissTimerRef.current) clearTimeout(dismissTimerRef.current);
     useQueuesStore.getState().resolveCard(card.card_id);
     useAgentsStore.getState().updateBadge(card.agent_id, -1);
+    void postHitlDecision(card.card_id, { resolution: 'acknowledged' }).catch(() => {
+      useQueuesStore.getState().appendCard(card);
+      useAgentsStore.getState().updateBadge(card.agent_id, 1);
+    });
   }
 
   return (
@@ -46,7 +41,7 @@ export function FyiCard({ card, selected, onSelect }: FyiCardProps) {
           <span className={styles.timestamp}>{formatTs(card.created_ts)}</span>
         </div>
         <div className={styles.subject}>{card.subject}</div>
-        <div className={styles.context}>{card.context}</div>
+        <div className={`${styles.context} ${styles.markdown}`} dangerouslySetInnerHTML={{ __html: contextHtml }} />
         <div className={styles.actions}>
           <button className={styles.btnNote} onClick={handleAcknowledge}>
             acknowledge

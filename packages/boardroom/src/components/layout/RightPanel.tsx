@@ -45,6 +45,8 @@ export function RightPanel({ primaryMode, onSelectPage, onEditClaudeMd, onViewBo
 
   // Determine the agent to show
   const contextAgentId = selectedCard?.agent_id ?? selectedMessage?.from_agent_id ?? selectedAgentId;
+
+  // Run ID hint from queue item (optional — ActivityFeed will auto-select latest if null)
   const contextRunId = selectedCard?.run_id ?? selectedMessage?.run_id ?? null;
 
   // Determine available tabs and default
@@ -108,11 +110,8 @@ export function RightPanel({ primaryMode, onSelectPage, onEditClaudeMd, onViewBo
             onViewBoilerplate={onViewBoilerplate}
           />
         )}
-        {contextAgentId && activeTab === 'activity-feed' && contextRunId && (
+        {contextAgentId && activeTab === 'activity-feed' && (
           <ActivityFeed agentId={contextAgentId} runId={contextRunId} />
-        )}
-        {contextAgentId && activeTab === 'activity-feed' && !contextRunId && (
-          <div className={styles.empty}>No run selected</div>
         )}
         {contextAgentId && activeTab === 'debug' && (
           <DebugPanel agentId={contextAgentId} />
