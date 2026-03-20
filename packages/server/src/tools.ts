@@ -387,7 +387,9 @@ export function sendMessage(
     });
 
     // Trigger recipient agent run with the inbox message as context
-    const conv = getOrCreateActiveConversation(args.to, () => generateId('conv'));
+    const conv = getOrCreateActiveConversation(args.to, () =>
+      generateId('conv'),
+    );
     const triggerMessage = `[Inbox message from ${sender.agent_name}]\nSubject: ${args.subject}\n\n${args.body}`;
     triggerAgentRun(args.to, conv.conversation_id, triggerMessage);
 

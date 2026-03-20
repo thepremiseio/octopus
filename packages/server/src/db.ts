@@ -309,9 +309,7 @@ function createSchema(database: Database.Database): void {
 
   // Add full_detail column to activity_feed (migration for existing DBs)
   try {
-    database.exec(
-      `ALTER TABLE activity_feed ADD COLUMN full_detail TEXT`,
-    );
+    database.exec(`ALTER TABLE activity_feed ADD COLUMN full_detail TEXT`);
   } catch {
     /* column already exists */
   }

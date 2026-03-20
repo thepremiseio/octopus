@@ -50,6 +50,7 @@ import {
 import {
   broadcast,
   generateId,
+  onceRunCompleted,
   setBroadcastFn,
   setDebugBroadcastFn,
   triggerAgentRun,
@@ -417,6 +418,20 @@ function setupRoutes(): void {
         `Agent '${params.agent_id}' has a paused invocation. Resolve pending cards/messages first.`,
       );
     }
+
+    // Trigger a handover run so the agent can save important info to SharedSpace
+    const conv = getOrCreateActiveConversation(params.agent_id, () =>
+      generateId('conv'),
+    );
+    const completionPromise = onceRunCompleted(params.agent_id);
+    triggerAgentRun(
+      params.agent_id,
+      conv.conversation_id,
+      '[CEO]: You are being terminated. Summarize any important private notes and write a handover document to SharedSpace so your knowledge is preserved. Be concise.',
+    );
+
+    // Wait for the handover run to finish, then delete
+    await completionPromise;
 
     const deletedIds = deleteAgentSubtree(params.agent_id);
     broadcast('agent.deleted', {
@@ -887,7 +902,11 @@ function setupRoutes(): void {
         run_id: null,
       });
 
-      triggerAgentRun(params.agent_id, params.conversation_id, `[CEO]: ${body.content}`);
+      triggerAgentRun(
+        params.agent_id,
+        params.conversation_id,
+        `[CEO]: ${body.content}`,
+      );
 
       sendJson(res, 201, {
         message_id: msgId,
@@ -1007,7 +1026,9 @@ function setupRoutes(): void {
 
       // For non-rejected resolutions, resume the agent
       if (body.resolution !== 'rejected') {
-        const conv = getOrCreateActiveConversation(card.agent_id, () => generateId('conv'));
+        const conv = getOrCreateActiveConversation(card.agent_id, () =>
+          generateId('conv'),
+        );
 
         // Build resume message with full context
         const parts: string[] = [];
@@ -1042,9 +1063,14 @@ function setupRoutes(): void {
           parts.push(`Decision: RETURNED with instructions`);
           parts.push(`CEO note: ${body.note}`);
         } else if (body.resolution === 'option_selected') {
-          const opts = card.options ? JSON.parse(card.options) as string[] : [];
-          const label = opts[body.selected_option!] ?? `option ${body.selected_option}`;
-          parts.push(`Decision: CEO selected option ${(body.selected_option ?? 0) + 1}: ${label}`);
+          const opts = card.options
+            ? (JSON.parse(card.options) as string[])
+            : [];
+          const label =
+            opts[body.selected_option!] ?? `option ${body.selected_option}`;
+          parts.push(
+            `Decision: CEO selected option ${(body.selected_option ?? 0) + 1}: ${label}`,
+          );
         } else {
           parts.push(`Decision: ${body.resolution}`);
         }
@@ -1141,7 +1167,10 @@ function setupRoutes(): void {
 
       // Resume sender
       if (msg.message_array) {
-        const senderConv = getOrCreateActiveConversation(msg.sender_agent_id, () => generateId('conv'));
+        const senderConv = getOrCreateActiveConversation(
+          msg.sender_agent_id,
+          () => generateId('conv'),
+        );
         triggerAgentRun(
           msg.sender_agent_id,
           senderConv.conversation_id,
@@ -1150,7 +1179,10 @@ function setupRoutes(): void {
       }
 
       // Wake recipient with the delivered message
-      const recipientConv = getOrCreateActiveConversation(msg.recipient_agent_id, () => generateId('conv'));
+      const recipientConv = getOrCreateActiveConversation(
+        msg.recipient_agent_id,
+        () => generateId('conv'),
+      );
       triggerAgentRun(
         msg.recipient_agent_id,
         recipientConv.conversation_id,
@@ -1189,6 +1221,18 @@ function setupRoutes(): void {
         message_id: params.message_id,
         from_agent_id: msg.sender_agent_id,
       });
+
+      // Notify the sender that the message was blocked
+      const recipient = getAgentById(msg.recipient_agent_id);
+      const senderConv = getOrCreateActiveConversation(
+        msg.sender_agent_id,
+        () => generateId('conv'),
+      );
+      triggerAgentRun(
+        msg.sender_agent_id,
+        senderConv.conversation_id,
+        `[CEO]: Your cross-branch message to ${recipient?.agent_name || msg.recipient_agent_id} (subject: "${msg.subject}") was not allowed through by the CEO. Do not retry sending this message.`,
+      );
 
       sendNoContent(res);
     },

@@ -106,6 +106,28 @@ export function triggerAgentRun(
   runAgentFn(agentId, conversationId, message);
 }
 
+// --- Octopus: One-shot run completion listeners ---
+
+const runCompletionListeners = new Map<string, Array<() => void>>();
+
+/** Register a one-shot listener that fires when the next run for this agent completes. */
+export function onceRunCompleted(agentId: string): Promise<void> {
+  return new Promise((resolve) => {
+    const arr = runCompletionListeners.get(agentId) || [];
+    arr.push(resolve);
+    runCompletionListeners.set(agentId, arr);
+  });
+}
+
+/** Called internally when a run completes to fire pending listeners. */
+export function notifyRunCompleted(agentId: string): void {
+  const arr = runCompletionListeners.get(agentId);
+  if (arr) {
+    runCompletionListeners.delete(agentId);
+    for (const cb of arr) cb();
+  }
+}
+
 export function broadcast(
   type: string,
   payload: Record<string, unknown>,
@@ -835,7 +857,8 @@ export async function runContainerAgent(
       const duration = Date.now() - startTime;
 
       // Record run completion
-      const exitReason = code === 0 ? 'completed' : (timedOut ? 'timeout' : 'error');
+      const exitReason =
+        code === 0 ? 'completed' : timedOut ? 'timeout' : 'error';
       completeAgentRun(runId, exitReason, 0);
       broadcast('agent.run.completed', {
         agent_id: agentId,
@@ -854,6 +877,9 @@ export async function runContainerAgent(
           previous_status: 'active',
         });
       }
+
+      // Fire one-shot completion listeners (e.g. handover before deletion)
+      notifyRunCompleted(agentId);
 
       if (timedOut) {
         const ts = new Date().toISOString().replace(/[:.]/g, '-');
