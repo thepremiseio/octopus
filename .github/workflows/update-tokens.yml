@@ -4,7 +4,10 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: ['src/**', 'container/**', 'launchd/**', 'CLAUDE.md']
+    paths:
+      - 'packages/server/src/**'
+      - 'packages/boardroom/src/**'
+      - 'CLAUDE.md'
 
 jobs:
   update-tokens:
@@ -24,11 +27,11 @@ jobs:
         with:
           python-version: '3.12'
 
-      - uses: ./repo-tokens
+      - uses: qwibitai/nanoclaw/repo-tokens@main
         id: tokens
         with:
-          include: 'src/**/*.ts container/agent-runner/src/**/*.ts container/Dockerfile container/build.sh launchd/com.nanoclaw.plist CLAUDE.md'
-          exclude: 'src/**/*.test.ts'
+          include: 'packages/server/src/**/*.ts packages/boardroom/src/**/*.ts packages/boardroom/src/**/*.tsx CLAUDE.md'
+          exclude: '**/*.test.ts'
           badge-path: 'repo-tokens/badge.svg'
 
       - name: Commit if changed
