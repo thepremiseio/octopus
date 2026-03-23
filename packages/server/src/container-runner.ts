@@ -311,44 +311,60 @@ export function generateBoilerplate(agentId: string): string {
 
   // Instructions
   bp += '\n## Instructions\n\n';
-  bp += '- **Escalation:** If you hit a decision you cannot make alone, escalate to your manager.\n';
+  bp +=
+    '- **Escalation:** If you hit a decision you cannot make alone, escalate to your manager.\n';
   bp += '- **Inbox:** Process unread inbox messages before your main task.\n';
-  bp += '- **Approvals:** See SharedSpace approval policy for when approval is required.\n';
-  bp += '- **Ending your invocation:** Always call `task_complete` when your work is done. If you sent a message to another agent, updated SharedSpace, or completed a task with no CEO-facing output, call `task_complete()` with no argument. Only pass a message if there is something the CEO genuinely needs to see or act on.\n';
+  bp +=
+    '- **Approvals:** See SharedSpace approval policy for when approval is required.\n';
+  bp +=
+    '- **Ending your invocation:** Always call `task_complete` when your work is done. If you sent a message to another agent, updated SharedSpace, or completed a task with no CEO-facing output, call `task_complete()` with no argument. Only pass a message if there is something the CEO genuinely needs to see or act on.\n';
 
   // Available Tools
   bp += '\n## Available Tools\n\n';
   bp += '- `sharedspace_read(id)` — Read a SharedSpace page\n';
   bp += '- `sharedspace_write(id, content)` — Write a SharedSpace page\n';
   bp += '- `sharedspace_list(prefix?)` — List SharedSpace pages\n';
-  bp += '- `send_message(to, subject, body)` — Send a message to another agent\n';
-  bp += '- `request_hitl(type, subject, context, options?, preference?)` — Request CEO input\n';
-  bp += '- `task_complete(message?)` — Call when your work is complete. Pass `message` if the CEO needs to see an outcome; omit it if your work was purely internal.\n';
+  bp +=
+    '- `send_message(to, subject, body)` — Send a message to another agent\n';
+  bp +=
+    '- `request_hitl(type, subject, context, options?, preference?)` — Request CEO input\n';
+  bp +=
+    '- `task_complete(message?)` — Call when your work is complete. Pass `message` if the CEO needs to see an outcome; omit it if your work was purely internal.\n';
 
   // SharedSpace usage guidance
   bp += '\n## SharedSpace\n\n';
-  bp += 'SharedSpace is a shared knowledge layer — a wiki that agents read to build context ';
-  bp += 'and write to when they produce information others will need. It is not a task list, ';
+  bp +=
+    'SharedSpace is a shared knowledge layer — a wiki that agents read to build context ';
+  bp +=
+    'and write to when they produce information others will need. It is not a task list, ';
   bp += 'a scratchpad, or a communication channel.\n\n';
 
   bp += '**Write to SharedSpace when:**\n';
-  bp += '- You are recording something that another agent (or future you) will need to consult — an overview, a running log, a reference document\n';
+  bp +=
+    '- You are recording something that another agent (or future you) will need to consult — an overview, a running log, a reference document\n';
   bp += '- The information is durable: it will still be relevant next week\n\n';
 
   bp += '**Do not write to SharedSpace when:**\n';
-  bp += '- The output is a one-time answer to a specific question — send it via message\n';
-  bp += '- You are noting something for your own reference — use your private storage\n';
+  bp +=
+    '- The output is a one-time answer to a specific question — send it via message\n';
+  bp +=
+    '- You are noting something for your own reference — use your private storage\n';
   bp += '- The page would not be consulted again after this session\n\n';
 
   bp += '**Never put the following in SharedSpace:**\n';
-  bp += '- Actions, tasks, or next steps for the CEO — surface these via a HITL card or a chat message. The CEO does not read SharedSpace to find out what to do.\n';
-  bp += '- Recommendations waiting for a decision — those belong in a choice or approval card, not a page\n';
-  bp += '- Summaries of conversations you just had — that is private storage territory\n\n';
+  bp +=
+    '- Actions, tasks, or next steps for the CEO — surface these via a HITL card or a chat message. The CEO does not read SharedSpace to find out what to do.\n';
+  bp +=
+    '- Recommendations waiting for a decision — those belong in a choice or approval card, not a page\n';
+  bp +=
+    '- Summaries of conversations you just had — that is private storage territory\n\n';
 
   bp += '**Page hygiene:**\n';
-  bp += '- Write summaries that answer "should I read this now?" — not "what is in here"\n';
+  bp +=
+    '- Write summaries that answer "should I read this now?" — not "what is in here"\n';
   bp += '- Keep summaries under 160 characters\n';
-  bp += '- Update an existing page rather than creating a new one wherever possible\n';
+  bp +=
+    '- Update an existing page rather than creating a new one wherever possible\n';
   bp += '- Do not create a page hierarchy deeper than the task warrants\n';
 
   return bp;

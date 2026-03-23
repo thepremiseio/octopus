@@ -325,7 +325,12 @@ function setupRoutes(): void {
     // Generate opaque agent_id
     const agentId = generateId('agent');
 
-    const agent = insertAgent(agentId, body.agent_name, body.agent_title, body.parent_id || null);
+    const agent = insertAgent(
+      agentId,
+      body.agent_name,
+      body.agent_title,
+      body.parent_id || null,
+    );
 
     // Create agent directory and default CLAUDE.md
     const fs = await import('fs');
@@ -336,7 +341,10 @@ function setupRoutes(): void {
     fs.mkdirSync(path.join(agentDir, 'inbox'), { recursive: true });
     const claudeMdPath = path.join(agentDir, 'CLAUDE.md');
     if (!fs.existsSync(claudeMdPath)) {
-      fs.writeFileSync(claudeMdPath, `# ${body.agent_name}\n\nYour name is ${body.agent_name}. Your role is ${body.agent_title}.\n`);
+      fs.writeFileSync(
+        claudeMdPath,
+        `# ${body.agent_name}\n\nYour name is ${body.agent_name}. Your role is ${body.agent_title}.\n`,
+      );
     }
 
     const agentPath = getAgentPath(agentId);
@@ -922,7 +930,10 @@ function setupRoutes(): void {
         run_id: null,
       });
 
-      const timestamp = new Date(now).toISOString().replace('T', ' ').replace(/\.\d+Z$/, ' UTC');
+      const timestamp = new Date(now)
+        .toISOString()
+        .replace('T', ' ')
+        .replace(/\.\d+Z$/, ' UTC');
       triggerAgentRun(
         params.agent_id,
         params.conversation_id,

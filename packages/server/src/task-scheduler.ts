@@ -110,9 +110,7 @@ async function runTask(
   );
 
   const groups = deps.registeredGroups();
-  let group = Object.values(groups).find(
-    (g) => g.folder === task.group_folder,
-  );
+  let group = Object.values(groups).find((g) => g.folder === task.group_folder);
 
   // Octopus fallback: group_folder is an agentId, not a registered group folder
   if (!group) {
