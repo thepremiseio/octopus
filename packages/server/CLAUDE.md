@@ -43,7 +43,8 @@ All persistent state is in a single SQLite file at `store/messages.db`.
 | `src/index.ts` | Entry point — init DB, start credential proxy, register channels, wire up message handling, start scheduler and IPC watcher |
 | `src/db.ts` | All SQLite schema and data access — agent tree, SharedSpace, HITL queue, cross-branch queue, activity feed, token budgets, conversations, inbox, runs, plus legacy NanoClaw tables |
 | `src/container-runner.ts` | Spawns agent containers, assembles system prompts, records token usage, enforces daily budget and circuit breaker, broadcasts domain events over WebSocket |
-| `src/sharedspace.ts` | Tree-aware access control for SharedSpace pages — computes readable/writable scope from agent hierarchy, builds and caches the per-agent page index |
+| `src/sharedspace.ts` | Obsidian-compatible markdown vault — frontmatter parsing, access control (ceo-only/owner-and-above/branch/everyone/explicit list), read/write/delete/list operations, agent context index |
+| `src/vault-watcher.ts` | File watcher (chokidar) — keeps SQLite index in sync with filesystem vault, full scan on startup, debounced event handlers, creates starter pages on first run |
 | `src/tools.ts` | Agent tool implementations: `sharedspace_read`, `sharedspace_write`, `sharedspace_list`, `send_message`, `request_hitl` — each enforces access rules and emits events |
 | `src/channels/dashboard.ts` | WebSocket + REST API server (replaces WhatsApp channel) — implements the full contract from `spec/api-spec.md` |
 | `src/channels/registry.ts` | Channel factory registry — channels self-register on import |
@@ -68,8 +69,8 @@ The database has two layers: legacy NanoClaw tables (chats, messages, registered
 | `agent_runs` | Execution history — run_id, trigger_type, tokens, exit_reason |
 | `activity_feed` | Per-tool-call log — entry_type (tool_call/tool_result), tool_category (read/write/hitl/message/shell) |
 | `daily_token_usage` | Budget tracking — (agent_id, date) → tokens_used |
-| `sharedspace_pages` | Wiki pages — page_id, title, summary, owner, body, parent_id, depth |
-| `sharedspace_index_cache` | Cached per-agent readable page index (invalidated on page changes) |
+| `sharedspace_index` | Vault page metadata index (no body) — page_id, title, owner, access, summary, updated, file_path |
+| `sharedspace_index_cache` | Cached per-agent readable page index (invalidated on vault changes) |
 | `hitl_queue` | HITL cards — card_type (approval/choice/fyi/circuit_breaker), serialised message array, resolution |
 | `cross_branch_queue` | Inter-branch messages awaiting CEO review — sender, recipient, serialised message array, status |
 | `conversations` / `conversation_messages` | Multi-turn CEO-agent chat |
@@ -87,9 +88,15 @@ If the agent has unread inbox messages, an inbox notification is prepended to th
 
 ## Access control (SharedSpace)
 
-- **Read**: ancestry chain (CEO down to self) + own subtree one level deep + CEO-owned pages
-- **Write**: own level and all descendants
-- **CEO**: full access everywhere
+Read access is controlled by the `access` field in each page's YAML frontmatter:
+
+- **`ceo-only`** — only the CEO (default)
+- **`owner-and-above`** — owner + ancestry chain up to CEO
+- **`branch`** — all agents in the same top-level branch as the owner
+- **`everyone`** — all agents
+- **Explicit list** — array of agent IDs (e.g. `["agent-a", "agent-b"]`)
+- **Write**: only the page owner and CEO
+- **CEO**: full read/write access everywhere
 
 ## Key environment variables
 
@@ -104,11 +111,13 @@ If the agent has unread inbox messages, an inbox notification is prepended to th
 | `CIRCUIT_BREAKER_WINDOW_MS` | `300000` (5 min) | Sliding window for action counting |
 | `CIRCUIT_BREAKER_THRESHOLD` | `50` | Max actions per window before pause |
 | `ASSISTANT_NAME` | `Andy` | Name used in trigger pattern |
+| `VAULT_PATH` | `store/vault` | SharedSpace markdown vault directory |
 
 ## Directory structure (runtime)
 
 ```
 store/messages.db         # SQLite — single source of truth
+store/vault/              # SharedSpace markdown vault (Obsidian-compatible)
 groups/{groupFolder}/     # Per-agent folders containing CLAUDE.md
 data/ipc/{groupFolder}/   # IPC files (input/ and output/ per agent)
 ```

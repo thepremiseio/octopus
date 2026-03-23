@@ -66,11 +66,9 @@ export function initSharedSpaceSubscriptions(): void {
         page_id: payload.page_id,
         title: payload.title,
         summary: payload.summary,
-        owner_agent_id: payload.owner_agent_id,
-        updated_by_agent_id: payload.updated_by_agent_id,
-        updated_ts: Date.now(),
-        parent_id: payload.parent_id ?? null,
-        depth: payload.depth ?? 0,
+        owner: payload.owner_agent_id,
+        access: 'ceo-only',
+        updated: new Date().toISOString(),
       });
     }
     useSharedSpaceStore.getState().markRecentlyUpdated(payload.page_id);

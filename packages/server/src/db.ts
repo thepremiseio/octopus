@@ -138,22 +138,18 @@ function createSchema(database: Database.Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_runs_agent ON agent_runs(agent_id, started_ts);
 
-    -- Octopus: SharedSpace pages
-    CREATE TABLE IF NOT EXISTS sharedspace_pages (
-      page_id TEXT PRIMARY KEY,
-      title TEXT NOT NULL,
-      summary TEXT NOT NULL,
-      owner_agent_id TEXT NOT NULL,
-      updated_by TEXT NOT NULL,
-      updated_ts INTEGER NOT NULL,
-      body TEXT NOT NULL DEFAULT '',
-      parent_id TEXT,
-      depth INTEGER NOT NULL DEFAULT 0
+    -- Octopus: SharedSpace vault index (frontmatter cache, no body)
+    CREATE TABLE IF NOT EXISTS sharedspace_index (
+      page_id   TEXT PRIMARY KEY,
+      title     TEXT NOT NULL,
+      owner     TEXT NOT NULL,
+      access    TEXT NOT NULL,
+      summary   TEXT NOT NULL,
+      updated   TEXT NOT NULL,
+      file_path TEXT NOT NULL
     );
-    CREATE INDEX IF NOT EXISTS idx_ss_parent ON sharedspace_pages(parent_id);
-    CREATE INDEX IF NOT EXISTS idx_ss_owner ON sharedspace_pages(owner_agent_id);
 
-    -- Octopus: Cached SharedSpace index per agent
+    -- Octopus: Cached SharedSpace context index per agent
     CREATE TABLE IF NOT EXISTS sharedspace_index_cache (
       agent_id TEXT PRIMARY KEY,
       index_text TEXT NOT NULL,
@@ -1214,86 +1210,96 @@ export function pruneOldRuns(agentId: string, keep: number = 10): void {
   );
 }
 
-// --- Octopus: SharedSpace pages ---
+// --- Octopus: SharedSpace vault index ---
 
-export interface SharedSpacePageRow {
+export interface SharedspaceIndexRow {
   page_id: string;
   title: string;
+  owner: string;
+  access: string; // JSON-encoded AccessLevel
   summary: string;
-  owner_agent_id: string;
-  updated_by: string;
-  updated_ts: number;
-  body: string;
-  parent_id: string | null;
-  depth: number;
+  updated: string;
+  file_path: string;
 }
 
-export function getSharedSpacePage(
+export function upsertSharedspaceIndex(page: {
+  page_id: string;
+  title: string;
+  owner: string;
+  access: unknown; // AccessLevel — serialised to JSON
+  summary: string;
+  updated: string;
+  file_path: string;
+}): void {
+  const accessJson =
+    typeof page.access === 'string'
+      ? page.access
+      : JSON.stringify(page.access);
+  db.prepare(
+    `INSERT INTO sharedspace_index (page_id, title, owner, access, summary, updated, file_path)
+     VALUES (?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(page_id) DO UPDATE SET
+       title = excluded.title,
+       owner = excluded.owner,
+       access = excluded.access,
+       summary = excluded.summary,
+       updated = excluded.updated,
+       file_path = excluded.file_path`,
+  ).run(
+    page.page_id,
+    page.title,
+    page.owner,
+    accessJson,
+    page.summary,
+    page.updated,
+    page.file_path,
+  );
+}
+
+export function deleteSharedspaceIndex(pageId: string): void {
+  db.prepare('DELETE FROM sharedspace_index WHERE page_id = ?').run(pageId);
+}
+
+export function getSharedspaceIndex(
   pageId: string,
-): SharedSpacePageRow | undefined {
-  return db
-    .prepare('SELECT * FROM sharedspace_pages WHERE page_id = ?')
-    .get(pageId) as SharedSpacePageRow | undefined;
+): SharedspaceIndexRow | null {
+  return (
+    (db
+      .prepare('SELECT * FROM sharedspace_index WHERE page_id = ?')
+      .get(pageId) as SharedspaceIndexRow | undefined) ?? null
+  );
 }
 
-export function getAllSharedSpacePages(): SharedSpacePageRow[] {
-  return db
-    .prepare('SELECT * FROM sharedspace_pages ORDER BY depth, page_id')
-    .all() as SharedSpacePageRow[];
-}
-
-export function upsertSharedSpacePage(
-  pageId: string,
-  title: string,
-  summary: string,
-  ownerAgentId: string,
-  updatedBy: string,
-  body: string,
-): { created: boolean } {
-  const existing = getSharedSpacePage(pageId);
-  const now = Date.now();
-
-  // Compute parent_id and depth from page_id
-  const lastSlash = pageId.lastIndexOf('/');
-  const parentId = lastSlash > 0 ? pageId.slice(0, lastSlash) : null;
-  const depth = pageId.split('/').length - 1;
-
-  if (existing) {
-    db.prepare(
-      `UPDATE sharedspace_pages SET title = ?, summary = ?, owner_agent_id = ?, updated_by = ?, updated_ts = ?, body = ?
-       WHERE page_id = ?`,
-    ).run(title, summary, ownerAgentId, updatedBy, now, body, pageId);
-    return { created: false };
-  } else {
-    db.prepare(
-      `INSERT INTO sharedspace_pages (page_id, title, summary, owner_agent_id, updated_by, updated_ts, body, parent_id, depth)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).run(
-      pageId,
-      title,
-      summary,
-      ownerAgentId,
-      updatedBy,
-      now,
-      body,
-      parentId,
-      depth,
-    );
-    return { created: true };
+export function listSharedspaceIndex(
+  prefix?: string,
+): SharedspaceIndexRow[] {
+  if (prefix) {
+    return db
+      .prepare(
+        'SELECT * FROM sharedspace_index WHERE page_id LIKE ? ORDER BY page_id',
+      )
+      .all(prefix + '%') as SharedspaceIndexRow[];
   }
-}
-
-export function deleteSharedSpacePage(pageId: string): boolean {
-  const result = db
-    .prepare('DELETE FROM sharedspace_pages WHERE page_id = ?')
-    .run(pageId);
-  return result.changes > 0;
-}
-
-export function getSharedSpaceChildren(parentId: string): SharedSpacePageRow[] {
   return db
-    .prepare('SELECT * FROM sharedspace_pages WHERE parent_id = ?')
-    .all(parentId) as SharedSpacePageRow[];
+    .prepare('SELECT * FROM sharedspace_index ORDER BY page_id')
+    .all() as SharedspaceIndexRow[];
+}
+
+/**
+ * Remove all index rows whose page_id is NOT in the given set.
+ * Used during full vault scan to purge stale entries.
+ */
+export function pruneSharedspaceIndex(validPageIds: Set<string>): void {
+  const all = db
+    .prepare('SELECT page_id FROM sharedspace_index')
+    .all() as { page_id: string }[];
+  for (const row of all) {
+    if (!validPageIds.has(row.page_id)) {
+      db.prepare('DELETE FROM sharedspace_index WHERE page_id = ?').run(
+        row.page_id,
+      );
+    }
+  }
 }
 
 // --- Octopus: SharedSpace index cache ---

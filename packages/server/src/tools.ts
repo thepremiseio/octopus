@@ -14,14 +14,10 @@ import {
   resolveAgent,
   getOrCreateActiveConversation,
   getAgentPath,
-  getSharedSpacePage,
-  getAllSharedSpacePages,
   getTopLevelBranch,
   insertCrossBranchMessage,
   insertHitlCard,
   insertInboxMessage,
-  upsertSharedSpacePage,
-  type SharedSpacePageRow,
 } from './db.js';
 import {
   broadcast,
@@ -32,9 +28,11 @@ import {
   triggerAgentRun,
 } from './container-runner.js';
 import {
-  canRead,
-  canWrite,
-  invalidateIndicesForPageOwner,
+  readPage,
+  writePage,
+  listPages,
+  AccessDeniedError,
+  ParentNotFoundError,
 } from './sharedspace.js';
 
 // --- Activity recording ---
@@ -136,55 +134,44 @@ export function sharedspaceRead(
     `id: ${pageId}`,
   );
 
-  const page = getSharedSpacePage(pageId);
-  if (!page) {
+  try {
+    const page = readPage(pageId, agentId);
     recordToolResult(
       agentId,
       runId,
       entryId,
       'sharedspace_read',
       `id: ${pageId}`,
-      'Page not found',
+      `Page retrieved (${page.body.length} chars)`,
     );
-    return { success: false, error: `Page '${pageId}' not found` };
-  }
-  if (!canRead(agentId, page)) {
-    recordToolResult(
-      agentId,
-      runId,
-      entryId,
-      'sharedspace_read',
-      `id: ${pageId}`,
-      'Access denied',
-    );
+    checkCircuitBreaker(agentId, runId);
     return {
-      success: false,
-      error: `Access denied: cannot read page '${pageId}'`,
+      success: true,
+      data: {
+        page_id: page.page_id,
+        title: page.title,
+        owner: page.owner,
+        access: page.access,
+        summary: page.summary,
+        updated: page.updated,
+        body: page.body,
+      },
     };
+  } catch (err) {
+    const msg =
+      err instanceof AccessDeniedError
+        ? err.message
+        : `Error reading page '${pageId}'`;
+    recordToolResult(
+      agentId,
+      runId,
+      entryId,
+      'sharedspace_read',
+      `id: ${pageId}`,
+      msg,
+    );
+    return { success: false, error: msg };
   }
-
-  recordToolResult(
-    agentId,
-    runId,
-    entryId,
-    'sharedspace_read',
-    `id: ${pageId}`,
-    `Page retrieved (${page.body.length} chars)`,
-  );
-
-  // Check circuit breaker
-  checkCircuitBreaker(agentId, runId);
-
-  return {
-    success: true,
-    data: {
-      page_id: page.page_id,
-      title: page.title,
-      summary: page.summary,
-      owner_agent_id: page.owner_agent_id,
-      body: page.body,
-    },
-  };
 }
 
 export function sharedspaceWrite(
@@ -194,7 +181,8 @@ export function sharedspaceWrite(
     title: string;
     summary: string;
     body: string;
-    owner_agent_id?: string;
+    owner?: string;
+    access?: string | string[];
   },
   runId: string,
 ): ToolResult {
@@ -206,68 +194,48 @@ export function sharedspaceWrite(
     `Page: ${pageId}\nTitle: ${content.title}\nSummary: ${content.summary}\n\n${content.body}`,
   );
 
-  const existing = getSharedSpacePage(pageId);
+  try {
+    const page = writePage(
+      pageId,
+      {
+        title: content.title,
+        summary: content.summary,
+        body: content.body,
+        owner: content.owner || agentId,
+        access: content.access as import('./sharedspace.js').AccessLevel,
+      },
+      agentId,
+    );
 
-  if (existing) {
-    if (!canWrite(agentId, existing)) {
-      recordToolResult(
-        agentId,
-        runId,
-        entryId,
-        'sharedspace_write',
-        `id: ${pageId}`,
-        'Access denied',
-      );
-      return {
-        success: false,
-        error: `Access denied: cannot write page '${pageId}'`,
-      };
-    }
+    const outcome = 'Page saved';
+    recordToolResult(
+      agentId,
+      runId,
+      entryId,
+      'sharedspace_write',
+      `id: ${pageId}`,
+      outcome,
+    );
+    checkCircuitBreaker(agentId, runId);
+    return {
+      success: true,
+      data: { page_id: page.page_id, title: page.title, owner: page.owner },
+    };
+  } catch (err) {
+    const msg =
+      err instanceof AccessDeniedError || err instanceof ParentNotFoundError
+        ? err.message
+        : `Error writing page '${pageId}'`;
+    recordToolResult(
+      agentId,
+      runId,
+      entryId,
+      'sharedspace_write',
+      `id: ${pageId}`,
+      msg,
+    );
+    return { success: false, error: msg };
   }
-
-  const ownerAgentId = existing
-    ? existing.owner_agent_id
-    : content.owner_agent_id || agentId;
-
-  const { created } = upsertSharedSpacePage(
-    pageId,
-    content.title,
-    content.summary,
-    ownerAgentId,
-    agentId,
-    content.body,
-  );
-
-  // Invalidate cached indices for all agents whose readable scope includes this page
-  invalidateIndicesForPageOwner(ownerAgentId);
-
-  const lastSlash = pageId.lastIndexOf('/');
-  broadcast('sharedspace.page.updated', {
-    page_id: pageId,
-    title: content.title,
-    summary: content.summary,
-    owner_agent_id: ownerAgentId,
-    updated_by_agent_id: agentId,
-    operation: created ? 'created' : 'updated',
-    parent_id: lastSlash > 0 ? pageId.slice(0, lastSlash) : null,
-    depth: pageId.split('/').length - 1,
-  });
-
-  const outcome = created ? 'Page created' : 'Page updated';
-  recordToolResult(
-    agentId,
-    runId,
-    entryId,
-    'sharedspace_write',
-    `id: ${pageId}`,
-    outcome,
-  );
-  checkCircuitBreaker(agentId, runId);
-
-  return {
-    success: true,
-    data: { page_id: pageId, operation: created ? 'created' : 'updated' },
-  };
 }
 
 export function sharedspaceList(
@@ -282,11 +250,7 @@ export function sharedspaceList(
     prefix ? `prefix: ${prefix}` : '(all)',
   );
 
-  const allPages = getAllSharedSpacePages();
-  const readable = allPages.filter((p) => canRead(agentId, p));
-  const filtered = prefix
-    ? readable.filter((p) => p.page_id.startsWith(prefix))
-    : readable;
+  const pages = listPages(prefix, agentId);
 
   recordToolResult(
     agentId,
@@ -294,17 +258,19 @@ export function sharedspaceList(
     entryId,
     'sharedspace_list',
     prefix || '(all)',
-    `${filtered.length} pages`,
+    `${pages.length} pages`,
   );
   checkCircuitBreaker(agentId, runId);
 
   return {
     success: true,
-    data: filtered.map((p) => ({
+    data: pages.map((p) => ({
       page_id: p.page_id,
       title: p.title,
       summary: p.summary,
-      owner_agent_id: p.owner_agent_id,
+      owner: p.owner,
+      access: p.access,
+      updated: p.updated,
     })),
   };
 }

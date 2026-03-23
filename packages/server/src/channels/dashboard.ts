@@ -12,7 +12,6 @@ import {
   createAgentRun,
   createConversation,
   deleteAgentSubtree,
-  deleteSharedSpacePage,
   deleteTask,
   discardCrossBranchMessageArray,
   getActiveConversation,
@@ -23,7 +22,6 @@ import {
   getAgentRun,
   getAgentRuns,
   getAgentTree,
-  getAllSharedSpacePages,
   getConversation,
   getConversationMessages,
   getConversations,
@@ -34,8 +32,6 @@ import {
   getLlmExchangesForRun,
   getOpenHitlCards,
   getPendingCrossBranchMessages,
-  getSharedSpaceChildren,
-  getSharedSpacePage,
   getActivityForRun,
   insertAgent,
   insertConversationMessage,
@@ -44,7 +40,6 @@ import {
   resolveHitlCard,
   updateAgentStatus,
   updateCrossBranchMessageStatus,
-  upsertSharedSpacePage,
   type AgentRow,
   type HitlCardRow,
 } from '../db.js';
@@ -59,7 +54,15 @@ import {
   generateBoilerplate,
 } from '../container-runner.js';
 import { addDebugAgent, removeDebugAgent } from '../debug-state.js';
-import { invalidateIndicesForPageOwner } from '../sharedspace.js';
+import {
+  readPage,
+  writePage,
+  deletePage,
+  listPages,
+  AccessDeniedError,
+  ParentNotFoundError,
+  PageHasChildrenError,
+} from '../sharedspace.js';
 import { logger } from '../logger.js';
 import {
   sharedspaceRead,
@@ -1274,49 +1277,55 @@ function setupRoutes(): void {
 
   // --- SharedSpace ---
 
-  addRoute('GET', '/api/v1/sharedspace', async (_req, res) => {
-    const pages = getAllSharedSpacePages();
+  addRoute('GET', '/api/v1/sharedspace', async (req, res) => {
+    const url = new URL(req.url || '/', 'http://localhost');
+    const asAgent = url.searchParams.get('as') || undefined;
+    const requesterId = asAgent || 'ceo';
+
+    const pages = listPages(undefined, requesterId);
     sendJson(res, 200, {
       pages: pages.map((p) => ({
         page_id: p.page_id,
         title: p.title,
         summary: p.summary,
-        owner_agent_id: p.owner_agent_id,
-        updated_by_agent_id: p.updated_by,
-        updated_ts: p.updated_ts,
-        parent_id: p.parent_id,
-        depth: p.depth,
+        owner: p.owner,
+        access: p.access,
+        updated: p.updated,
       })),
     });
   });
 
   // SharedSpace wildcard routes (page_id contains slashes)
-  addWildcardRoute('GET', '/api/v1/sharedspace', async (_req, res, params) => {
-    const page = getSharedSpacePage(params.page_id);
-    if (!page) {
-      return sendError(
-        res,
-        404,
-        'page_not_found',
-        `Page '${params.page_id}' not found`,
-      );
+  addWildcardRoute('GET', '/api/v1/sharedspace', async (req, res, params) => {
+    const url = new URL(req.url || '/', 'http://localhost');
+    const asAgent = url.searchParams.get('as') || undefined;
+    const requesterId = asAgent || 'ceo';
+
+    try {
+      const page = readPage(params.page_id, requesterId);
+      sendJson(res, 200, {
+        page_id: page.page_id,
+        title: page.title,
+        summary: page.summary,
+        owner: page.owner,
+        access: page.access,
+        updated: page.updated,
+        body: page.body,
+      });
+    } catch (err) {
+      if (err instanceof AccessDeniedError) {
+        return sendError(res, 404, 'page_not_found', err.message);
+      }
+      throw err;
     }
-    sendJson(res, 200, {
-      page_id: page.page_id,
-      title: page.title,
-      summary: page.summary,
-      owner_agent_id: page.owner_agent_id,
-      updated_by_agent_id: page.updated_by,
-      updated_ts: page.updated_ts,
-      body: page.body,
-    });
   });
 
   addWildcardRoute('PUT', '/api/v1/sharedspace', async (req, res, params) => {
     const body = (await parseJson(req)) as {
       title?: string;
       summary?: string;
-      owner_agent_id?: string;
+      owner?: string;
+      access?: string | string[];
       body?: string;
     };
     if (!body.title || body.summary === undefined || body.body === undefined) {
@@ -1328,104 +1337,57 @@ function setupRoutes(): void {
       );
     }
 
-    const existing = getSharedSpacePage(params.page_id);
-    if (!existing && !body.owner_agent_id) {
-      return sendError(
-        res,
-        400,
-        'validation_error',
-        'owner_agent_id is required on creation',
+    try {
+      const page = writePage(
+        params.page_id,
+        {
+          title: body.title,
+          summary: body.summary,
+          body: body.body,
+          owner: body.owner,
+          access: body.access as import('../sharedspace.js').AccessLevel,
+        },
+        'ceo',
       );
-    }
 
-    // Check parent exists for new pages
-    if (!existing) {
-      const lastSlash = params.page_id.lastIndexOf('/');
-      if (lastSlash > 0) {
-        const parentId = params.page_id.slice(0, lastSlash);
-        if (!getSharedSpacePage(parentId)) {
-          return sendError(
-            res,
-            404,
-            'page_not_found',
-            `Parent page '${parentId}' does not exist`,
-          );
-        }
+      // writePage emits the WS event internally
+      sendJson(res, 200, {
+        page_id: page.page_id,
+        title: page.title,
+        summary: page.summary,
+        owner: page.owner,
+        access: page.access,
+        updated: page.updated,
+        body: page.body,
+      });
+    } catch (err) {
+      if (err instanceof ParentNotFoundError) {
+        return sendError(res, 404, 'page_not_found', err.message);
       }
+      if (err instanceof AccessDeniedError) {
+        return sendError(res, 403, 'access_denied', err.message);
+      }
+      throw err;
     }
-
-    const ownerAgentId = existing
-      ? body.owner_agent_id || existing.owner_agent_id
-      : body.owner_agent_id!;
-    const { created } = upsertSharedSpacePage(
-      params.page_id,
-      body.title,
-      body.summary,
-      ownerAgentId,
-      'ceo',
-      body.body,
-    );
-    invalidateIndicesForPageOwner(ownerAgentId);
-
-    const page = getSharedSpacePage(params.page_id)!;
-
-    broadcast('sharedspace.page.updated', {
-      page_id: params.page_id,
-      title: body.title,
-      summary: body.summary,
-      owner_agent_id: ownerAgentId,
-      updated_by_agent_id: 'ceo',
-      operation: created ? 'created' : 'updated',
-      parent_id: page.parent_id ?? null,
-      depth: page.depth,
-    });
-
-    sendJson(res, created ? 201 : 200, {
-      page_id: page.page_id,
-      title: page.title,
-      summary: page.summary,
-      owner_agent_id: page.owner_agent_id,
-      updated_by_agent_id: page.updated_by,
-      updated_ts: page.updated_ts,
-      body: page.body,
-    });
   });
 
   addWildcardRoute(
     'DELETE',
     '/api/v1/sharedspace',
     async (_req, res, params) => {
-      const page = getSharedSpacePage(params.page_id);
-      if (!page) {
-        return sendError(
-          res,
-          404,
-          'page_not_found',
-          `Page '${params.page_id}' not found`,
-        );
+      try {
+        deletePage(params.page_id, 'ceo');
+        // deletePage emits the WS event internally
+        sendNoContent(res);
+      } catch (err) {
+        if (err instanceof AccessDeniedError) {
+          return sendError(res, 404, 'page_not_found', err.message);
+        }
+        if (err instanceof PageHasChildrenError) {
+          return sendError(res, 409, 'page_has_children', err.message);
+        }
+        throw err;
       }
-      const children = getSharedSpaceChildren(params.page_id);
-      if (children.length > 0) {
-        return sendError(
-          res,
-          409,
-          'page_has_children',
-          'Delete child pages first',
-        );
-      }
-      deleteSharedSpacePage(params.page_id);
-      invalidateIndicesForPageOwner(page.owner_agent_id);
-
-      broadcast('sharedspace.page.updated', {
-        page_id: params.page_id,
-        title: page.title,
-        summary: page.summary,
-        owner_agent_id: page.owner_agent_id,
-        updated_by_agent_id: 'ceo',
-        operation: 'deleted',
-      });
-
-      sendNoContent(res);
     },
   );
 

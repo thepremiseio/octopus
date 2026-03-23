@@ -30,7 +30,7 @@ export function PageTree({ onSelectPage }: PageTreeProps) {
   }
 
   function rootId(pageId: string): string {
-    return pageId.split('/')[0];
+    return pageId.split('/')[0] ?? pageId;
   }
 
   return (
@@ -53,12 +53,12 @@ export function PageTree({ onSelectPage }: PageTreeProps) {
             {showSeparator && <div className={styles.rootSeparator} />}
             <div
               className={`${styles.pageRow} ${isActive ? styles.pageActive : ''}`}
-              style={{ paddingLeft: 4 + page.depth * 16 }}
+              style={{ paddingLeft: 4 + (page.page_id.split('/').length - 1) * 16 }}
               onClick={() => onSelectPage(page.page_id)}
             >
               {isRecent && <span className={styles.recentDot}>&bull;</span>}
               <span className={styles.pageLabel}>{shortLabel(page.page_id)}</span>
-              <span className={styles.pageOwner}>{ownerName(page.owner_agent_id)}</span>
+              <span className={styles.pageOwner}>{ownerName(page.owner)}</span>
             </div>
           </div>
         );
@@ -80,7 +80,7 @@ export function PageTree({ onSelectPage }: PageTreeProps) {
             void putSharedSpacePage(pageId, {
               title,
               summary: '',
-              owner_agent_id: owner,
+              owner: owner,
               body: '',
             }).then(() => onSelectPage(pageId));
             setShowCreate(false);

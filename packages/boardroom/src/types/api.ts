@@ -83,11 +83,9 @@ export interface SharedSpacePage {
   page_id: string;
   title: string;
   summary: string;
-  owner_agent_id: string;
-  updated_by_agent_id: string;
-  updated_ts: number;
-  parent_id: string | null;
-  depth: number;
+  owner: string;
+  access: string | string[];
+  updated: string;
 }
 
 export interface SharedSpacePageFull extends SharedSpacePage {
@@ -343,8 +341,8 @@ export interface SharedSpacePageUpdatedPayload {
   owner_agent_id: string;
   updated_by_agent_id: string;
   operation: SharedSpaceOperation;
-  parent_id: string | null;
-  depth: number;
+  parent_id?: string | null;
+  depth?: number;
 }
 
 export interface InboxMessageDeliveredPayload {
@@ -425,7 +423,8 @@ export interface PostHitlDecisionRequest {
 export interface PutSharedSpacePageRequest {
   title: string;
   summary: string;
-  owner_agent_id: string;
+  owner?: string;
+  access?: string | string[];
   body: string;
 }
 

@@ -1,11 +1,9 @@
 import { useEffect, useState } from 'react';
 import { marked } from 'marked';
 import type { SharedSpacePageFull } from '../../types/api';
-import { getSharedSpacePage, putSharedSpacePage, deleteSharedSpacePage } from '../../api/rest';
+import { getSharedSpacePage } from '../../api/rest';
 import { useSharedSpaceStore } from '../../store/sharedspace';
-import { useAgentsStore } from '../../store/agents';
 import { on } from '../../api/websocket';
-import { formatTs } from '../../utils/format';
 import styles from './PageView.module.css';
 
 interface PageViewProps {
@@ -14,13 +12,7 @@ interface PageViewProps {
 
 export function PageView({ pageId }: PageViewProps) {
   const [page, setPage] = useState<SharedSpacePageFull | null>(null);
-  const [editing, setEditing] = useState(false);
-  const [editTitle, setEditTitle] = useState('');
-  const [editSummary, setEditSummary] = useState('');
-  const [editOwner, setEditOwner] = useState('');
-  const [editBody, setEditBody] = useState('');
   const [banner, setBanner] = useState<string | null>(null);
-  const [confirmDelete, setConfirmDelete] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -30,8 +22,6 @@ export function PageView({ pageId }: PageViewProps) {
       useSharedSpaceStore.getState().setCurrentPage(p);
     });
     setBanner(null);
-    setEditing(false);
-    setConfirmDelete(false);
     return () => { cancelled = true; };
   }, [pageId]);
 
@@ -43,25 +33,10 @@ export function PageView({ pageId }: PageViewProps) {
         useSharedSpaceStore.getState().setCurrentPage(null);
         return;
       }
-      if (payload.updated_by_agent_id !== 'ceo') {
-        setBanner(`This page was updated by ${payload.updated_by_agent_id}`);
-      }
+      setBanner(`This page was updated by ${payload.updated_by_agent_id}`);
     });
     return unsub;
   }, [pageId]);
-
-  function enterEditMode() {
-    if (!page) return;
-    setEditTitle(page.title);
-    setEditSummary(page.summary);
-    setEditOwner(page.owner_agent_id);
-    setEditBody(page.body);
-    setEditing(true);
-  }
-
-  function cancelEdit() {
-    setEditing(false);
-  }
 
   async function handleReload() {
     const p = await getSharedSpacePage(pageId);
@@ -70,129 +45,41 @@ export function PageView({ pageId }: PageViewProps) {
     setBanner(null);
   }
 
-  async function handleSave() {
-    if (!page) return;
-    const updated = await putSharedSpacePage(pageId, {
-      title: editTitle,
-      summary: editSummary,
-      owner_agent_id: editOwner,
-      body: editBody,
-    });
-    setPage(updated);
-    useSharedSpaceStore.getState().setCurrentPage(updated);
-    setEditing(false);
-  }
-
-  async function handleDelete() {
-    await deleteSharedSpacePage(pageId);
-    useSharedSpaceStore.getState().deletePage(pageId);
-    useSharedSpaceStore.getState().setCurrentPage(null);
-  }
-
   if (!page) {
     return <div className={styles.loading}>Loading...</div>;
   }
 
   const html = marked.parse(page.body, { async: false }) as string;
+  const accessLabel = Array.isArray(page.access)
+    ? page.access.join(', ')
+    : page.access;
 
   return (
     <div className={styles.page}>
-      {editing ? (
-        <>
-          <div className={styles.pagePath}>{page.page_id}</div>
-          <div className={styles.fieldGroup}>
-            <label className={styles.fieldRow}>
-              <span className={styles.fieldLabel}>title</span>
-              <input
-                className={styles.fieldInput}
-                value={editTitle}
-                onChange={(e) => setEditTitle(e.target.value)}
-              />
-            </label>
-            <label className={styles.fieldRow}>
-              <span className={styles.fieldLabel}>summary</span>
-              <input
-                className={styles.fieldInput}
-                value={editSummary}
-                onChange={(e) => setEditSummary(e.target.value)}
-                placeholder="One-line summary"
-              />
-            </label>
-            <label className={styles.fieldRow}>
-              <span className={styles.fieldLabel}>owner</span>
-              <select
-                className={styles.fieldInput}
-                value={editOwner}
-                onChange={(e) => setEditOwner(e.target.value)}
-              >
-                <option value="ceo">ceo</option>
-                {useAgentsStore.getState().agents.map((a) => (
-                  <option key={a.agent_id} value={a.agent_id}>{a.agent_name}</option>
-                ))}
-              </select>
-            </label>
-          </div>
-          <textarea
-            className={styles.editArea}
-            value={editBody}
-            onChange={(e) => setEditBody(e.target.value)}
-          />
-          <div className={styles.editActions}>
-            <button className={styles.saveBtn} onClick={() => void handleSave()}>
-              Save
-            </button>
-            <button className={styles.cancelBtn} onClick={cancelEdit}>
-              Cancel
-            </button>
-          </div>
-        </>
-      ) : (
-        <>
-          <div className={styles.pagePath}>{page.page_id}</div>
-          <div className={styles.meta}>
-            <span className={styles.metaTitle}>{page.title}</span>
-            {page.summary && (
-              <span className={styles.metaSummary}>{page.summary}</span>
-            )}
-            <span className={styles.metaDetail}>
-              {page.owner_agent_id} &middot; {formatTs(page.updated_ts)}
-            </span>
-          </div>
+      <div className={styles.pagePath}>{page.page_id}</div>
+      <div className={styles.meta}>
+        <span className={styles.metaTitle}>{page.title}</span>
+        {page.summary && (
+          <span className={styles.metaSummary}>{page.summary}</span>
+        )}
+        <span className={styles.metaDetail}>
+          owner: {page.owner} &middot; access: {accessLabel} &middot; {page.updated}
+        </span>
+      </div>
 
-          {banner && (
-            <div className={styles.banner}>
-              <span>{banner}</span>
-              <button className={styles.reloadBtn} onClick={() => void handleReload()}>
-                Reload
-              </button>
-            </div>
-          )}
-
-          <div
-            className={styles.body}
-            dangerouslySetInnerHTML={{ __html: html }}
-          />
-          <div className={styles.actions}>
-            <button className={styles.editBtn} onClick={enterEditMode}>
-              edit
-            </button>
-            {confirmDelete ? (
-              <>
-                <button className={styles.deleteBtn} onClick={() => void handleDelete()}>
-                  confirm delete
-                </button>
-                <button className={styles.cancelBtn} onClick={() => setConfirmDelete(false)}>
-                  cancel
-                </button>
-              </>
-            ) : (
-              <button className={styles.deleteBtn} onClick={() => setConfirmDelete(true)}>
-                delete
-              </button>
-            )}
-          </div>
-        </>
+      {banner && (
+        <div className={styles.banner}>
+          <span>{banner}</span>
+          <button className={styles.reloadBtn} onClick={() => void handleReload()}>
+            Reload
+          </button>
+        </div>
       )}
+
+      <div
+        className={styles.body}
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
     </div>
   );
 }

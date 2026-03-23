@@ -56,6 +56,7 @@ import { GroupQueue } from './group-queue.js';
 import { resolveGroupFolderPath } from './group-folder.js';
 import { setCurrentRun, clearCurrentRun } from './debug-state.js';
 import { startIpcWatcher } from './ipc.js';
+import { startVaultWatcher } from './vault-watcher.js';
 import { findChannel, formatMessages, formatOutbound } from './router.js';
 import {
   restoreRemoteControl,
@@ -488,6 +489,7 @@ async function main(): Promise<void> {
   ensureContainerSystemRunning();
   initDatabase();
   logger.info('Database initialized');
+  startVaultWatcher();
   loadState();
   restoreRemoteControl();
 
