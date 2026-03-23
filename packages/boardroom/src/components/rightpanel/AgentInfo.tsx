@@ -68,6 +68,7 @@ export function AgentInfo({ agentId, onEditClaudeMd, onViewBoilerplate }: AgentI
   return (
     <div className={styles.info}>
       <div className={styles.name}>{agent.agent_name}</div>
+      <div className={styles.title}>{agent.agent_title}</div>
 
       <div className={styles.sectionLabel}>Status</div>
       <div className={styles.row}>

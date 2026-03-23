@@ -47,7 +47,7 @@ export function CrossBranchCard({ message, selected, onSelect }: CrossBranchCard
       <div className={styles.cardInner}>
         <div className={styles.cardHeader}>
           <span className={`${styles.typeBadge} ${styles.badgeCrossBranch}`}>CROSS-BRANCH</span>
-          <span className={styles.agentName}>{message.from_agent_name}</span>
+          <span className={styles.agentName}>{message.from_agent_name} &middot; {message.from_agent_title}</span>
           <span className={styles.timestamp}>{formatTs(message.arrived_ts)}</span>
         </div>
         <div className={styles.cbRoute}>

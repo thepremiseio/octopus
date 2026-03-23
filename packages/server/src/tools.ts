@@ -11,6 +11,7 @@
 import {
   appendActivityEntry,
   getAgentById,
+  resolveAgent,
   getOrCreateActiveConversation,
   getAgentPath,
   getSharedSpacePage,
@@ -27,6 +28,7 @@ import {
   checkCircuitBreaker,
   generateId,
   getToolCategory,
+  setTaskComplete,
   triggerAgentRun,
 } from './container-runner.js';
 import {
@@ -345,7 +347,7 @@ export function sendMessage(
   );
 
   const sender = getAgentById(senderAgentId);
-  const recipient = getAgentById(args.to);
+  const recipient = resolveAgent(args.to);
 
   if (!recipient) {
     throw new Error(`Recipient agent '${args.to}' not found`);
@@ -354,8 +356,11 @@ export function sendMessage(
     throw new Error(`Sender agent '${senderAgentId}' not found`);
   }
 
+  // Normalize to the resolved agent_id for all downstream operations
+  const recipientId = recipient.agent_id;
+
   const senderBranch = getTopLevelBranch(senderAgentId);
-  const recipientBranch = getTopLevelBranch(args.to);
+  const recipientBranch = getTopLevelBranch(recipientId);
 
   const isSameBranch =
     senderBranch &&
@@ -368,7 +373,7 @@ export function sendMessage(
     // Same-branch: deliver directly
     insertInboxMessage({
       message_id: messageId,
-      recipient_agent_id: args.to,
+      recipient_agent_id: recipientId,
       from_agent_id: senderAgentId,
       from_agent_name: sender.agent_name,
       subject: args.subject,
@@ -378,7 +383,7 @@ export function sendMessage(
     });
 
     broadcast('inbox.message.delivered', {
-      recipient_agent_id: args.to,
+      recipient_agent_id: recipientId,
       message_id: messageId,
       from_agent_id: senderAgentId,
       from_agent_name: sender.agent_name,
@@ -387,11 +392,11 @@ export function sendMessage(
     });
 
     // Trigger recipient agent run with the inbox message as context
-    const conv = getOrCreateActiveConversation(args.to, () =>
+    const conv = getOrCreateActiveConversation(recipientId, () =>
       generateId('conv'),
     );
     const triggerMessage = `[Inbox message from ${sender.agent_name}]\nSubject: ${args.subject}\n\n${args.body}`;
-    triggerAgentRun(args.to, conv.conversation_id, triggerMessage);
+    triggerAgentRun(recipientId, conv.conversation_id, triggerMessage);
 
     recordToolResult(
       senderAgentId,
@@ -409,7 +414,7 @@ export function sendMessage(
     insertCrossBranchMessage({
       message_id: xbMsgId,
       sender_agent_id: senderAgentId,
-      recipient_agent_id: args.to,
+      recipient_agent_id: recipientId,
       subject: args.subject,
       body: args.body,
       run_id: runId,
@@ -418,15 +423,17 @@ export function sendMessage(
     });
 
     const senderPath = getAgentPath(senderAgentId);
-    const recipientPath = getAgentPath(args.to);
+    const recipientPath = getAgentPath(recipientId);
 
     broadcast('crossbranch.message.arrived', {
       message_id: xbMsgId,
       from_agent_id: senderAgentId,
       from_agent_name: sender.agent_name,
+      from_agent_title: sender.agent_title,
       from_agent_path: senderPath,
-      to_agent_id: args.to,
+      to_agent_id: recipientId,
       to_agent_name: recipient.agent_name,
+      to_agent_title: recipient.agent_title,
       to_agent_path: recipientPath,
       subject: args.subject,
       body: args.body,
@@ -443,6 +450,52 @@ export function sendMessage(
     );
     return { delivered: false, queued_for_ceo: true, message_id: xbMsgId };
   }
+}
+
+// --- task_complete tool ---
+
+export interface TaskCompleteResult {
+  success: boolean;
+  message?: string;
+}
+
+/**
+ * Signal that the agent's work is complete.
+ * If `message` is provided and non-empty, it will be routed to CEO chat.
+ * If absent or empty, the invocation ends silently.
+ *
+ * The runner tracks this per-run and uses it to decide whether to route
+ * the agent's final text output to CEO chat.
+ */
+export function taskComplete(
+  agentId: string,
+  runId: string,
+  message?: string,
+): TaskCompleteResult {
+  const entryId = recordToolCall(
+    agentId,
+    runId,
+    'task_complete',
+    message ? `message: ${message.slice(0, 100)}` : '(silent)',
+    message || undefined,
+  );
+
+  recordToolResult(
+    agentId,
+    runId,
+    entryId,
+    'task_complete',
+    message ? 'Completing with message' : 'Completing silently',
+    'Invocation ended',
+  );
+
+  // Record in per-run state so the runner can intercept final output
+  setTaskComplete(runId, message);
+
+  return {
+    success: true,
+    message: message || undefined,
+  };
 }
 
 // --- request_hitl tool ---
@@ -501,6 +554,7 @@ export function requestHitl(
     card_type: args.type,
     agent_id: agentId,
     agent_name: agent?.agent_name || agentId,
+    agent_title: agent?.agent_title || '',
     agent_path: getAgentPath(agentId),
     subject: args.subject,
     context: args.context,

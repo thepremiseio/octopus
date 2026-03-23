@@ -21,7 +21,9 @@ import {
   setRunAgentFn,
   broadcast,
   broadcastDebug,
+  clearTaskComplete,
   generateId,
+  getTaskComplete,
   writeGroupsSnapshot,
   writeTasksSnapshot,
 } from './container-runner.js';
@@ -707,6 +709,30 @@ async function main(): Promise<void> {
     const debugRunId = generateId('run');
     setCurrentRun(agentId, debugRunId);
 
+    // Helper: route a text string to CEO chat for this agent/conversation
+    const routeToCeoChat = (text: string) => {
+      const msgId = generateId('msg');
+      const now = Date.now();
+      insertConversationMessage({
+        message_id: msgId,
+        conversation_id: conversationId,
+        agent_id: agentId,
+        role: 'agent',
+        content: text,
+        ts: now,
+        run_id: null,
+      });
+      broadcast('chat.message.received', {
+        agent_id: agentId,
+        conversation_id: conversationId,
+        message_id: msgId,
+        role: 'agent',
+        content: text,
+        ts: now,
+        run_id: null,
+      });
+    };
+
     void runAgent(
       group,
       message,
@@ -719,32 +745,30 @@ async function main(): Promise<void> {
           .trim();
         if (!text) return;
 
-        const msgId = generateId('msg');
-        const now = Date.now();
-        insertConversationMessage({
-          message_id: msgId,
-          conversation_id: conversationId,
-          agent_id: agentId,
-          role: 'agent',
-          content: text,
-          ts: now,
-          run_id: null,
-        });
+        // Check if task_complete was called for this run
+        const tcState = getTaskComplete(debugRunId);
+        if (tcState !== undefined) {
+          // task_complete was called — suppress the agent's final text output.
+          // The task_complete message (if any) is routed below in .then().
+          return;
+        }
 
-        broadcast('chat.message.received', {
-          agent_id: agentId,
-          conversation_id: conversationId,
-          message_id: msgId,
-          role: 'agent',
-          content: text,
-          ts: now,
-          run_id: null,
-        });
+        // Fallback: no task_complete called, route final text to CEO chat
+        routeToCeoChat(text);
       },
       { singleRun: true, runId: debugRunId },
     )
       .then(() => {
         clearCurrentRun(agentId);
+
+        // If task_complete was called with a message, route it to CEO chat
+        const tcState = getTaskComplete(debugRunId);
+        if (tcState !== undefined) {
+          if (tcState) {
+            routeToCeoChat(tcState);
+          }
+          clearTaskComplete(debugRunId);
+        }
         // After run, save the session under conversationId for next-turn continuity.
         // runAgent stored the new session under sessions[agentId] (group.folder).
         const newSession = sessions[agentId];

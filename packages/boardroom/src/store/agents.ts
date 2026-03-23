@@ -138,6 +138,7 @@ export function initAgentsSubscriptions(): void {
     useAgentsStore.getState().upsertAgent({
       agent_id: payload.agent_id,
       agent_name: payload.agent_name,
+      agent_title: payload.agent_title,
       parent_id: payload.parent_id,
       depth: payload.depth,
       status: payload.status,

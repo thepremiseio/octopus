@@ -21,6 +21,18 @@ export function PageTree({ onSelectPage }: PageTreeProps) {
     return parts[parts.length - 1] ?? pageId;
   }
 
+  const agents = useAgentsStore((s) => s.agents);
+
+  function ownerName(agentId: string): string {
+    if (agentId === 'ceo') return 'CEO';
+    const agent = agents.find((a) => a.agent_id === agentId);
+    return agent?.agent_name ?? agentId;
+  }
+
+  function rootId(pageId: string): string {
+    return pageId.split('/')[0];
+  }
+
   return (
     <div className={styles.tree}>
       <div className={styles.header}>
@@ -31,19 +43,23 @@ export function PageTree({ onSelectPage }: PageTreeProps) {
           onClick={() => setShowCreate(true)}
         >+</button>
       </div>
-      {pages.map((page) => {
+      {pages.map((page, i) => {
         const isActive = currentPage?.page_id === page.page_id;
         const isRecent = recentlyUpdated.has(page.page_id);
+        const prevPage = i > 0 ? pages[i - 1] : null;
+        const showSeparator = prevPage && rootId(prevPage.page_id) !== rootId(page.page_id);
         return (
-          <div
-            key={page.page_id}
-            className={`${styles.pageRow} ${isActive ? styles.pageActive : ''}`}
-            style={{ paddingLeft: 4 + page.depth * 16 }}
-            onClick={() => onSelectPage(page.page_id)}
-          >
-            {isRecent && <span className={styles.recentDot}>&bull;</span>}
-            <span className={styles.pageLabel}>{shortLabel(page.page_id)}</span>
-            <span className={styles.pageOwner}>{page.owner_agent_id}</span>
+          <div key={page.page_id}>
+            {showSeparator && <div className={styles.rootSeparator} />}
+            <div
+              className={`${styles.pageRow} ${isActive ? styles.pageActive : ''}`}
+              style={{ paddingLeft: 4 + page.depth * 16 }}
+              onClick={() => onSelectPage(page.page_id)}
+            >
+              {isRecent && <span className={styles.recentDot}>&bull;</span>}
+              <span className={styles.pageLabel}>{shortLabel(page.page_id)}</span>
+              <span className={styles.pageOwner}>{ownerName(page.owner_agent_id)}</span>
+            </div>
           </div>
         );
       })}

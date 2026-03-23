@@ -64,7 +64,7 @@ export function ApprovalCard({ card, selected, onSelect }: ApprovalCardProps) {
       <div className={styles.cardInner}>
         <div className={styles.cardHeader}>
           <span className={`${styles.typeBadge} ${badgeClass}`}>{badgeLabel}</span>
-          <span className={styles.agentName}>{card.agent_name}</span>
+          <span className={styles.agentName}>{card.agent_name} &middot; {card.agent_title}</span>
           <span className={styles.timestamp}>{formatTs(card.created_ts)}</span>
         </div>
         <div className={styles.subject}>{card.subject}</div>

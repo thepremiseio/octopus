@@ -223,6 +223,7 @@ export function checkCircuitBreaker(agentId: string, runId: string): boolean {
       card_type: 'circuit_breaker',
       agent_id: agentId,
       agent_name: agent?.agent_name || agentId,
+      agent_title: agent?.agent_title || '',
       agent_path: getAgentPath(agentId),
       subject: `Circuit breaker tripped: ${count} actions in ${Math.round(CIRCUIT_BREAKER_WINDOW_MS / 1000)}s`,
       context: `Agent exceeded ${CIRCUIT_BREAKER_THRESHOLD} actions within sliding window.`,
@@ -236,6 +237,30 @@ export function checkCircuitBreaker(agentId: string, runId: string): boolean {
   return false;
 }
 
+// --- Octopus: task_complete state tracking ---
+
+// Tracks runs where task_complete was called.
+// Value is the message (if any) or empty string for silent completion.
+const taskCompleteState = new Map<string, string>();
+
+export function setTaskComplete(runId: string, message?: string): void {
+  taskCompleteState.set(runId, message || '');
+}
+
+/**
+ * Returns the task_complete state for a run.
+ * - undefined: task_complete was NOT called
+ * - '': task_complete was called with no message (silent)
+ * - non-empty string: task_complete was called with a message
+ */
+export function getTaskComplete(runId: string): string | undefined {
+  return taskCompleteState.get(runId);
+}
+
+export function clearTaskComplete(runId: string): void {
+  taskCompleteState.delete(runId);
+}
+
 // --- Octopus: Tool category mapping ---
 
 export function getToolCategory(toolName: string): string {
@@ -246,12 +271,87 @@ export function getToolCategory(toolName: string): string {
     case 'sharedspace_write':
       return 'write';
     case 'request_hitl':
+    case 'task_complete':
       return 'hitl';
     case 'send_message':
       return 'message';
     default:
       return 'shell';
   }
+}
+
+// --- Octopus: Boilerplate generation (single source of truth) ---
+
+/**
+ * Build the auto-generated boilerplate for an agent.
+ * This is the canonical copy — every call site that needs boilerplate
+ * should call this function rather than duplicating the text.
+ */
+export function generateBoilerplate(agentId: string): string {
+  const agent = getAgentById(agentId);
+  if (!agent) return '';
+
+  const ancestry = getAncestryChain(agentId);
+  const parent = ancestry.length > 1 ? ancestry[ancestry.length - 2] : null;
+  const children = getDirectChildren(agentId);
+
+  let bp = `Your name is ${agent.agent_name}. Your role is ${agent.agent_title}.\n\n`;
+
+  // Position
+  bp += '## Position\n\n';
+  if (parent) {
+    bp += `You report to ${parent.agent_name} (${parent.agent_title}).\n`;
+  } else {
+    bp += 'You report directly to the CEO.\n';
+  }
+  bp += `Your position in the hierarchy: ${ancestry.map((a) => a.agent_name).join(' → ')}\n`;
+  if (children.length > 0) {
+    bp += `Direct reports: ${children.map((c) => `${c.agent_name} (${c.agent_title})`).join(', ')}\n`;
+  }
+
+  // Instructions
+  bp += '\n## Instructions\n\n';
+  bp += '- **Escalation:** If you hit a decision you cannot make alone, escalate to your manager.\n';
+  bp += '- **Inbox:** Process unread inbox messages before your main task.\n';
+  bp += '- **Approvals:** See SharedSpace approval policy for when approval is required.\n';
+  bp += '- **Ending your invocation:** Always call `task_complete` when your work is done. If you sent a message to another agent, updated SharedSpace, or completed a task with no CEO-facing output, call `task_complete()` with no argument. Only pass a message if there is something the CEO genuinely needs to see or act on.\n';
+
+  // Available Tools
+  bp += '\n## Available Tools\n\n';
+  bp += '- `sharedspace_read(id)` — Read a SharedSpace page\n';
+  bp += '- `sharedspace_write(id, content)` — Write a SharedSpace page\n';
+  bp += '- `sharedspace_list(prefix?)` — List SharedSpace pages\n';
+  bp += '- `send_message(to, subject, body)` — Send a message to another agent\n';
+  bp += '- `request_hitl(type, subject, context, options?, preference?)` — Request CEO input\n';
+  bp += '- `task_complete(message?)` — Call when your work is complete. Pass `message` if the CEO needs to see an outcome; omit it if your work was purely internal.\n';
+
+  // SharedSpace usage guidance
+  bp += '\n## SharedSpace\n\n';
+  bp += 'SharedSpace is a shared knowledge layer — a wiki that agents read to build context ';
+  bp += 'and write to when they produce information others will need. It is not a task list, ';
+  bp += 'a scratchpad, or a communication channel.\n\n';
+
+  bp += '**Write to SharedSpace when:**\n';
+  bp += '- You are recording something that another agent (or future you) will need to consult — an overview, a running log, a reference document\n';
+  bp += '- The information is durable: it will still be relevant next week\n\n';
+
+  bp += '**Do not write to SharedSpace when:**\n';
+  bp += '- The output is a one-time answer to a specific question — send it via message\n';
+  bp += '- You are noting something for your own reference — use your private storage\n';
+  bp += '- The page would not be consulted again after this session\n\n';
+
+  bp += '**Never put the following in SharedSpace:**\n';
+  bp += '- Actions, tasks, or next steps for the CEO — surface these via a HITL card or a chat message. The CEO does not read SharedSpace to find out what to do.\n';
+  bp += '- Recommendations waiting for a decision — those belong in a choice or approval card, not a page\n';
+  bp += '- Summaries of conversations you just had — that is private storage territory\n\n';
+
+  bp += '**Page hygiene:**\n';
+  bp += '- Write summaries that answer "should I read this now?" — not "what is in here"\n';
+  bp += '- Keep summaries under 160 characters\n';
+  bp += '- Update an existing page rather than creating a new one wherever possible\n';
+  bp += '- Do not create a page hierarchy deeper than the task warrants\n';
+
+  return bp;
 }
 
 // --- Octopus: Prompt assembly ---
@@ -269,37 +369,7 @@ export function assembleSystemPrompt(agentId: string): string {
   }
 
   // 2. Auto-generated boilerplate
-  const ancestry = getAncestryChain(agentId);
-  const parent = ancestry.length > 1 ? ancestry[ancestry.length - 2] : null;
-  const children = getDirectChildren(agentId);
-
-  let boilerplate = '## Position\n\n';
-  if (parent) {
-    boilerplate += `You report to ${parent.agent_name}.\n`;
-  } else {
-    boilerplate += 'You report directly to the CEO.\n';
-  }
-  boilerplate += `Your position in the hierarchy: ${ancestry.map((a) => a.agent_name).join(' → ')}\n`;
-  if (children.length > 0) {
-    boilerplate += `Direct reports: ${children.map((c) => c.agent_name).join(', ')}\n`;
-  }
-
-  boilerplate += '\n## Instructions\n\n';
-  boilerplate +=
-    '- **Escalation:** If you hit a decision you cannot make alone, escalate to your manager.\n';
-  boilerplate +=
-    '- **Inbox:** Process unread inbox messages before your main task.\n';
-  boilerplate +=
-    '- **Approvals:** See SharedSpace approval policy for when approval is required.\n';
-  boilerplate += '\n## Available Tools\n\n';
-  boilerplate += '- `sharedspace_read(id)` — Read a SharedSpace page\n';
-  boilerplate +=
-    '- `sharedspace_write(id, content)` — Write a SharedSpace page\n';
-  boilerplate += '- `sharedspace_list(prefix?)` — List SharedSpace pages\n';
-  boilerplate +=
-    '- `send_message(to, subject, body)` — Send a message to another agent\n';
-  boilerplate +=
-    '- `request_hitl(type, subject, context, options?, preference?)` — Request CEO input\n';
+  let boilerplate = generateBoilerplate(agentId);
 
   // Inbox notification
   const unread = getUnreadInboxMessages(agentId);
@@ -318,45 +388,6 @@ export function assembleSystemPrompt(agentId: string): string {
   }
 
   return parts.filter(Boolean).join('\n\n---\n\n');
-}
-
-export function generateBoilerplate(agentId: string): string {
-  const agent = getAgentById(agentId);
-  if (!agent) return '';
-
-  const ancestry = getAncestryChain(agentId);
-  const parent = ancestry.length > 1 ? ancestry[ancestry.length - 2] : null;
-  const children = getDirectChildren(agentId);
-
-  let boilerplate = '## Position\n\n';
-  if (parent) {
-    boilerplate += `You report to ${parent.agent_name}.\n`;
-  } else {
-    boilerplate += 'You report directly to the CEO.\n';
-  }
-  boilerplate += `Your position in the hierarchy: ${ancestry.map((a) => a.agent_name).join(' → ')}\n`;
-  if (children.length > 0) {
-    boilerplate += `Direct reports: ${children.map((c) => c.agent_name).join(', ')}\n`;
-  }
-
-  boilerplate += '\n## Instructions\n\n';
-  boilerplate +=
-    '- **Escalation:** If you hit a decision you cannot make alone, escalate to your manager.\n';
-  boilerplate +=
-    '- **Inbox:** Process unread inbox messages before your main task.\n';
-  boilerplate +=
-    '- **Approvals:** See SharedSpace approval policy for when approval is required.\n';
-  boilerplate += '\n## Available Tools\n\n';
-  boilerplate += '- `sharedspace_read(id)` — Read a SharedSpace page\n';
-  boilerplate +=
-    '- `sharedspace_write(id, content)` — Write a SharedSpace page\n';
-  boilerplate += '- `sharedspace_list(prefix?)` — List SharedSpace pages\n';
-  boilerplate +=
-    '- `send_message(to, subject, body)` — Send a message to another agent\n';
-  boilerplate +=
-    '- `request_hitl(type, subject, context, options?, preference?)` — Request CEO input\n';
-
-  return boilerplate;
 }
 
 export interface ContainerInput {
@@ -623,41 +654,12 @@ export async function runContainerAgent(
     }
     const agent = getAgentById(input.groupFolder);
     if (agent) {
-      const ancestry = getAncestryChain(input.groupFolder);
-      const parent = ancestry.length > 1 ? ancestry[ancestry.length - 2] : null;
-      const children = getDirectChildren(input.groupFolder);
-
-      let boilerplate = '## Position\n\n';
-      if (parent) {
-        boilerplate += `You report to ${parent.agent_name}.\n`;
-      } else {
-        boilerplate += 'You report directly to the CEO.\n';
-      }
-      boilerplate += `Your position in the hierarchy: ${ancestry.map((a) => a.agent_name).join(' → ')}\n`;
-      if (children.length > 0) {
-        boilerplate += `Direct reports: ${children.map((c) => c.agent_name).join(', ')}\n`;
-      }
-      boilerplate += '\n## Instructions\n\n';
-      boilerplate +=
-        '- **Escalation:** If you hit a decision you cannot make alone, escalate to your manager.\n';
-      boilerplate +=
-        '- **Inbox:** Process unread inbox messages before your main task.\n';
-      boilerplate +=
-        '- **Approvals:** See SharedSpace approval policy for when approval is required.\n';
-      boilerplate += '\n## Available Tools\n\n';
-      boilerplate += '- `sharedspace_read(id)` — Read a SharedSpace page\n';
-      boilerplate +=
-        '- `sharedspace_write(id, content)` — Write a SharedSpace page\n';
-      boilerplate += '- `sharedspace_list(prefix?)` — List SharedSpace pages\n';
-      boilerplate +=
-        '- `send_message(to, subject, body)` — Send a message to another agent\n';
-      boilerplate +=
-        '- `request_hitl(type, subject, context, options?, preference?)` — Request CEO input\n';
+      let boilerplate = generateBoilerplate(input.groupFolder);
 
       const unread = getUnreadInboxMessages(input.groupFolder);
       if (unread.length > 0) {
         boilerplate =
-          `**You have ${unread.length} unread inbox message(s). Process these before your main task.**\n\n` +
+          `**📬 You have ${unread.length} unread inbox message(s). Process these before your main task.**\n\n` +
           boilerplate;
       }
 

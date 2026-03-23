@@ -444,6 +444,26 @@ if (isOctopus) {
   );
 
   server.tool(
+    'task_complete',
+    `Always call this when your work is complete.
+- If your work produced something the CEO should see, pass it as \`message\`.
+- If your work was purely internal (sending a message to another agent,
+  updating SharedSpace, running a scheduled task), call with no argument.
+The invocation ends immediately when this tool is called. Do not call any
+other tools after task_complete.`,
+    {
+      message: z.string().optional().describe('Optional message to route to CEO chat'),
+    },
+    async (args) => {
+      const result = await callHostTool('task_complete', { message: args.message });
+      if (result.error) {
+        return { content: [{ type: 'text' as const, text: `Error: ${result.error}` }], isError: true };
+      }
+      return { content: [{ type: 'text' as const, text: 'Invocation complete.' }] };
+    },
+  );
+
+  server.tool(
     'request_hitl',
     'Request human-in-the-loop input from the CEO. Use "approval" for yes/no decisions, "choice" for multiple options, or "fyi" for informational notifications.',
     {

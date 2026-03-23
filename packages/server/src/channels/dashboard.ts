@@ -17,6 +17,7 @@ import {
   discardCrossBranchMessageArray,
   getActiveConversation,
   getAgentById,
+  getAgentByName,
   getOrCreateActiveConversation,
   getAgentPath,
   getAgentRun,
@@ -66,6 +67,7 @@ import {
   sharedspaceList,
   sendMessage,
   requestHitl,
+  taskComplete,
 } from '../tools.js';
 
 // --- WebSocket clients ---
@@ -172,6 +174,7 @@ function buildConnectionState(): Record<string, unknown> {
   const agentStates = agents.map((a) => ({
     agent_id: a.agent_id,
     agent_name: a.agent_name,
+    agent_title: a.agent_title,
     parent_id: a.parent_id,
     depth: a.depth,
     status: a.status,
@@ -270,6 +273,7 @@ function setupRoutes(): void {
       return {
         agent_id: a.agent_id,
         agent_name: a.agent_name,
+        agent_title: a.agent_title,
         parent_id: a.parent_id,
         depth: a.depth,
         status: a.status,
@@ -284,10 +288,14 @@ function setupRoutes(): void {
   addRoute('POST', '/api/v1/agents', async (req, res) => {
     const body = (await parseJson(req)) as {
       agent_name?: string;
+      agent_title?: string;
       parent_id?: string | null;
     };
     if (!body.agent_name) {
       return sendError(res, 400, 'validation_error', 'agent_name is required');
+    }
+    if (!body.agent_title) {
+      return sendError(res, 400, 'validation_error', 'agent_title is required');
     }
 
     // Validate parent exists if provided
@@ -303,23 +311,21 @@ function setupRoutes(): void {
       }
     }
 
-    // Generate agent_id from name
-    const agentId = body.agent_name
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-|-$/g, '');
-
-    // Check uniqueness
-    if (getAgentById(agentId)) {
+    // Agent names must be unique (used for send_message resolution)
+    const existing = getAgentByName(body.agent_name);
+    if (existing) {
       return sendError(
         res,
         409,
-        'validation_error',
-        `Agent '${agentId}' already exists`,
+        'name_taken',
+        `An agent named '${body.agent_name}' already exists`,
       );
     }
 
-    const agent = insertAgent(agentId, body.agent_name, body.parent_id || null);
+    // Generate opaque agent_id
+    const agentId = generateId('agent');
+
+    const agent = insertAgent(agentId, body.agent_name, body.agent_title, body.parent_id || null);
 
     // Create agent directory and default CLAUDE.md
     const fs = await import('fs');
@@ -330,13 +336,14 @@ function setupRoutes(): void {
     fs.mkdirSync(path.join(agentDir, 'inbox'), { recursive: true });
     const claudeMdPath = path.join(agentDir, 'CLAUDE.md');
     if (!fs.existsSync(claudeMdPath)) {
-      fs.writeFileSync(claudeMdPath, `# ${body.agent_name}\n\n`);
+      fs.writeFileSync(claudeMdPath, `# ${body.agent_name}\n\nYour name is ${body.agent_name}. Your role is ${body.agent_title}.\n`);
     }
 
     const agentPath = getAgentPath(agentId);
     broadcast('agent.created', {
       agent_id: agentId,
       agent_name: body.agent_name,
+      agent_title: body.agent_title,
       parent_id: body.parent_id || null,
       agent_path: agentPath,
       depth: agent.depth,
@@ -347,6 +354,7 @@ function setupRoutes(): void {
     sendJson(res, 201, {
       agent_id: agentId,
       agent_name: body.agent_name,
+      agent_title: body.agent_title,
       parent_id: body.parent_id || null,
       depth: agent.depth,
       status: 'idle',
@@ -371,6 +379,7 @@ function setupRoutes(): void {
     sendJson(res, 200, {
       agent_id: agent.agent_id,
       agent_name: agent.agent_name,
+      agent_title: agent.agent_title,
       parent_id: agent.parent_id,
       agent_path: getAgentPath(agent.agent_id),
       depth: agent.depth,
@@ -462,6 +471,11 @@ function setupRoutes(): void {
       if (fs.existsSync(claudeMdPath)) {
         content = fs.readFileSync(claudeMdPath, 'utf-8');
       }
+      // Strip auto-generated boilerplate — CEO should only see their own content
+      const markerIdx = content.indexOf('\n\n<!-- octopus:auto-generated -->');
+      if (markerIdx >= 0) {
+        content = content.slice(0, markerIdx);
+      }
       sendJson(res, 200, { agent_id: params.agent_id, content });
     },
   );
@@ -488,8 +502,14 @@ function setupRoutes(): void {
       const { GROUPS_DIR } = await import('../config.js');
       const agentDir = path.join(GROUPS_DIR, params.agent_id);
       fs.mkdirSync(agentDir, { recursive: true });
-      fs.writeFileSync(path.join(agentDir, 'CLAUDE.md'), body.content);
-      sendJson(res, 200, { agent_id: params.agent_id, content: body.content });
+      // Strip auto-generated boilerplate if accidentally included
+      let content = body.content;
+      const markerIdx = content.indexOf('\n\n<!-- octopus:auto-generated -->');
+      if (markerIdx >= 0) {
+        content = content.slice(0, markerIdx);
+      }
+      fs.writeFileSync(path.join(agentDir, 'CLAUDE.md'), content);
+      sendJson(res, 200, { agent_id: params.agent_id, content });
     },
   );
 
@@ -902,10 +922,11 @@ function setupRoutes(): void {
         run_id: null,
       });
 
+      const timestamp = new Date(now).toISOString().replace('T', ' ').replace(/\.\d+Z$/, ' UTC');
       triggerAgentRun(
         params.agent_id,
         params.conversation_id,
-        `[CEO]: ${body.content}`,
+        `[CEO @ ${timestamp}]: ${body.content}`,
       );
 
       sendJson(res, 201, {
@@ -1099,9 +1120,11 @@ function setupRoutes(): void {
           message_id: m.message_id,
           from_agent_id: m.sender_agent_id,
           from_agent_name: sender?.agent_name || m.sender_agent_id,
+          from_agent_title: sender?.agent_title || '',
           from_agent_path: getAgentPath(m.sender_agent_id),
           to_agent_id: m.recipient_agent_id,
           to_agent_name: recipient?.agent_name || m.recipient_agent_id,
+          to_agent_title: recipient?.agent_title || '',
           to_agent_path: getAgentPath(m.recipient_agent_id),
           subject: m.subject,
           body: m.body,
@@ -1423,6 +1446,7 @@ function setupRoutes(): void {
     const agentCosts = agents.map((a) => ({
       agent_id: a.agent_id,
       agent_name: a.agent_name,
+      agent_title: a.agent_title,
       cost_eur: 0.0, // TODO: compute from token usage
     }));
     agentCosts.sort((a, b) => b.cost_eur - a.cost_eur);
@@ -1498,6 +1522,13 @@ function setupRoutes(): void {
             run_id,
           );
           break;
+        case 'task_complete':
+          result = taskComplete(
+            agent_id,
+            run_id,
+            args.message as string | undefined,
+          );
+          break;
         default:
           sendJson(res, 400, { error: `Unknown tool: ${tool}` });
           return;
@@ -1521,6 +1552,7 @@ function formatHitlCard(card: HitlCardRow): Record<string, unknown> {
     card_type: card.card_type,
     agent_id: card.agent_id,
     agent_name: agent?.agent_name || card.agent_id,
+    agent_title: agent?.agent_title || '',
     agent_path: getAgentPath(card.agent_id),
     subject: card.subject,
     context: card.context,

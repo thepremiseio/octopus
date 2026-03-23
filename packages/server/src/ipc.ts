@@ -247,15 +247,24 @@ export async function processTaskIpc(
         const targetJid = data.targetJid as string;
         const targetGroupEntry = registeredGroups[targetJid];
 
-        if (!targetGroupEntry) {
-          logger.warn(
-            { targetJid },
-            'Cannot schedule task: target group not registered',
-          );
-          break;
+        let targetFolder: string;
+        if (targetGroupEntry) {
+          targetFolder = targetGroupEntry.folder;
+        } else {
+          // Octopus mode: sourceGroup is an agentId, targetJid is a conversation ID.
+          // Use the sourceGroup (agentId) as the target folder since Octopus agents
+          // are not in the registeredGroups map.
+          const { getAgentById: getAgent } = await import('./db.js');
+          const agent = getAgent(sourceGroup);
+          if (!agent) {
+            logger.warn(
+              { targetJid, sourceGroup },
+              'Cannot schedule task: target group not registered and sourceGroup is not an Octopus agent',
+            );
+            break;
+          }
+          targetFolder = sourceGroup;
         }
-
-        const targetFolder = targetGroupEntry.folder;
 
         // Authorization: non-main groups can only schedule for themselves
         if (!isMain && targetFolder !== sourceGroup) {

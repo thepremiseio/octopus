@@ -87,6 +87,7 @@ function createSchema(database: Database.Database): void {
     CREATE TABLE IF NOT EXISTS agents (
       agent_id TEXT PRIMARY KEY,
       agent_name TEXT NOT NULL,
+      agent_title TEXT NOT NULL DEFAULT '',
       parent_id TEXT,
       depth INTEGER NOT NULL DEFAULT 0,
       status TEXT NOT NULL DEFAULT 'idle',
@@ -815,6 +816,7 @@ export function getAllRegisteredGroups(): Record<string, RegisteredGroup> {
 export interface AgentRow {
   agent_id: string;
   agent_name: string;
+  agent_title: string;
   parent_id: string | null;
   depth: number;
   status: string;
@@ -827,14 +829,14 @@ export function getAgentTree(): AgentRow[] {
   const rows = db
     .prepare(
       `WITH RECURSIVE tree AS (
-        SELECT agent_id, agent_name, parent_id, depth, status, created_at, agent_name AS sort_path
+        SELECT agent_id, agent_name, agent_title, parent_id, depth, status, created_at, agent_name AS sort_path
         FROM agents WHERE parent_id IS NULL
         UNION ALL
-        SELECT a.agent_id, a.agent_name, a.parent_id, a.depth, a.status, a.created_at,
+        SELECT a.agent_id, a.agent_name, a.agent_title, a.parent_id, a.depth, a.status, a.created_at,
                tree.sort_path || '/' || a.agent_name
         FROM agents a JOIN tree ON a.parent_id = tree.agent_id
       )
-      SELECT agent_id, agent_name, parent_id, depth, status, created_at FROM tree ORDER BY sort_path`,
+      SELECT agent_id, agent_name, agent_title, parent_id, depth, status, created_at FROM tree ORDER BY sort_path`,
     )
     .all() as AgentRow[];
   return rows;
@@ -846,9 +848,21 @@ export function getAgentById(agentId: string): AgentRow | undefined {
     | undefined;
 }
 
+export function getAgentByName(name: string): AgentRow | undefined {
+  return db
+    .prepare('SELECT * FROM agents WHERE lower(agent_name) = lower(?)')
+    .get(name) as AgentRow | undefined;
+}
+
+/** Look up an agent by ID first, then fall back to name (case-insensitive). */
+export function resolveAgent(idOrName: string): AgentRow | undefined {
+  return getAgentById(idOrName) ?? getAgentByName(idOrName);
+}
+
 export function insertAgent(
   agentId: string,
   agentName: string,
+  agentTitle: string,
   parentId: string | null,
 ): AgentRow {
   let depth = 0;
@@ -859,11 +873,12 @@ export function insertAgent(
   }
   const now = Date.now();
   db.prepare(
-    'INSERT INTO agents (agent_id, agent_name, parent_id, depth, status, created_at) VALUES (?, ?, ?, ?, ?, ?)',
-  ).run(agentId, agentName, parentId, depth, 'idle', now);
+    'INSERT INTO agents (agent_id, agent_name, agent_title, parent_id, depth, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+  ).run(agentId, agentName, agentTitle, parentId, depth, 'idle', now);
   return {
     agent_id: agentId,
     agent_name: agentName,
+    agent_title: agentTitle,
     parent_id: parentId,
     depth,
     status: 'idle',

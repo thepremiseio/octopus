@@ -31,6 +31,7 @@ export type CostPeriod = 'today' | 'week' | 'month';
 export interface Agent {
   agent_id: string;
   agent_name: string;
+  agent_title: string;
   parent_id: string | null;
   depth: number;
   status: AgentStatus;
@@ -52,6 +53,7 @@ export interface HitlCard {
   card_type: CardType;
   agent_id: string;
   agent_name: string;
+  agent_title: string;
   agent_path: string[];
   subject: string;
   context: string;
@@ -65,9 +67,11 @@ export interface CrossBranchMessage {
   message_id: string;
   from_agent_id: string;
   from_agent_name: string;
+  from_agent_title: string;
   from_agent_path: string[];
   to_agent_id: string;
   to_agent_name: string;
+  to_agent_title: string;
   to_agent_path: string[];
   subject: string;
   body: string;
@@ -149,6 +153,7 @@ export interface Schedule {
 export interface CostAgent {
   agent_id: string;
   agent_name: string;
+  agent_title: string;
   cost_eur: number;
 }
 
@@ -182,6 +187,7 @@ export interface ConnectionReadyPayload {
 export interface ConnectionStateAgentEntry {
   agent_id: string;
   agent_name: string;
+  agent_title: string;
   parent_id: string | null;
   depth: number;
   status: AgentStatus;
@@ -201,6 +207,7 @@ export interface HitlCardCreatedPayload {
   card_type: CardType;
   agent_id: string;
   agent_name: string;
+  agent_title: string;
   agent_path: string[];
   subject: string;
   context: string;
@@ -221,9 +228,11 @@ export interface CrossBranchMessageArrivedPayload {
   message_id: string;
   from_agent_id: string;
   from_agent_name: string;
+  from_agent_title: string;
   from_agent_path: string[];
   to_agent_id: string;
   to_agent_name: string;
+  to_agent_title: string;
   to_agent_path: string[];
   subject: string;
   body: string;
@@ -276,6 +285,7 @@ export interface AgentRunActivityPayload {
 export interface AgentCreatedPayload {
   agent_id: string;
   agent_name: string;
+  agent_title: string;
   parent_id: string | null;
   agent_path: string[];
   depth: number;
@@ -389,6 +399,7 @@ export type WsEventType = keyof WsEventMap;
 
 export interface PostAgentRequest {
   agent_name: string;
+  agent_title: string;
   parent_id: string | null;
 }
 
@@ -427,6 +438,7 @@ export interface GetAgentsResponse {
 export interface PostAgentResponse {
   agent_id: string;
   agent_name: string;
+  agent_title: string;
   parent_id: string | null;
   depth: number;
   status: AgentStatus;

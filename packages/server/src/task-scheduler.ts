@@ -10,6 +10,7 @@ import {
 } from './container-runner.js';
 import {
   getAllTasks,
+  getAgentById,
   getDueTasks,
   getTaskById,
   logTaskRun,
@@ -109,9 +110,23 @@ async function runTask(
   );
 
   const groups = deps.registeredGroups();
-  const group = Object.values(groups).find(
+  let group = Object.values(groups).find(
     (g) => g.folder === task.group_folder,
   );
+
+  // Octopus fallback: group_folder is an agentId, not a registered group folder
+  if (!group) {
+    const agent = getAgentById(task.group_folder);
+    if (agent) {
+      group = {
+        name: agent.agent_name,
+        folder: task.group_folder,
+        trigger: '',
+        added_at: new Date().toISOString(),
+        requiresTrigger: false,
+      };
+    }
+  }
 
   if (!group) {
     logger.error(

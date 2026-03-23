@@ -39,8 +39,31 @@
   align-items: center;
   padding: 4px 12px;
   cursor: pointer;
-  gap: 8px;
   min-height: 28px;
+}
+
+.nodeLines {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.nodeLine1 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.nodeTitle {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+  padding-left: 16px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 14px;
 }
 
 .node:hover {
@@ -65,6 +88,10 @@
 
 .nodeActive .nodeName {
   color: var(--text-primary);
+}
+
+.nodeUnread {
+  color: var(--accent);
 }
 
 .nodeRight {
