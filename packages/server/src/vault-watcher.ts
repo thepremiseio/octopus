@@ -123,10 +123,7 @@ function fullScan(): void {
   pruneSharedspaceIndex(diskPageIds);
 
   invalidateAllAgentIndices();
-  logger.info(
-    { pages: diskPageIds.size },
-    'Vault full scan complete',
-  );
+  logger.info({ pages: diskPageIds.size }, 'Vault full scan complete');
 }
 
 /**

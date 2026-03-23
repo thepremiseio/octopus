@@ -242,9 +242,7 @@ export function readPage(
   }
 
   if (!canRead(requesterId, page)) {
-    throw new AccessDeniedError(
-      `Access denied: cannot read page '${pageId}'`,
-    );
+    throw new AccessDeniedError(`Access denied: cannot read page '${pageId}'`);
   }
 
   return page;
@@ -351,10 +349,7 @@ export function writePage(
 /**
  * Delete a page with access control.
  */
-export function deletePage(
-  pageId: string,
-  requesterId: string | 'ceo',
-): void {
+export function deletePage(pageId: string, requesterId: string | 'ceo'): void {
   const filePath = pathFromPageId(VAULT_PATH, pageId);
   const page = readPageFromDisk(filePath);
   if (!page) return; // Already gone

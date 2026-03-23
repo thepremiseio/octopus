@@ -1232,9 +1232,7 @@ export function upsertSharedspaceIndex(page: {
   file_path: string;
 }): void {
   const accessJson =
-    typeof page.access === 'string'
-      ? page.access
-      : JSON.stringify(page.access);
+    typeof page.access === 'string' ? page.access : JSON.stringify(page.access);
   db.prepare(
     `INSERT INTO sharedspace_index (page_id, title, owner, access, summary, updated, file_path)
      VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -1270,9 +1268,7 @@ export function getSharedspaceIndex(
   );
 }
 
-export function listSharedspaceIndex(
-  prefix?: string,
-): SharedspaceIndexRow[] {
+export function listSharedspaceIndex(prefix?: string): SharedspaceIndexRow[] {
   if (prefix) {
     return db
       .prepare(
@@ -1290,9 +1286,9 @@ export function listSharedspaceIndex(
  * Used during full vault scan to purge stale entries.
  */
 export function pruneSharedspaceIndex(validPageIds: Set<string>): void {
-  const all = db
-    .prepare('SELECT page_id FROM sharedspace_index')
-    .all() as { page_id: string }[];
+  const all = db.prepare('SELECT page_id FROM sharedspace_index').all() as {
+    page_id: string;
+  }[];
   for (const row of all) {
     if (!validPageIds.has(row.page_id)) {
       db.prepare('DELETE FROM sharedspace_index WHERE page_id = ?').run(
