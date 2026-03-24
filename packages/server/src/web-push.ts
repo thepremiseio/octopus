@@ -27,7 +27,9 @@ let vapidKeys: VapidKeys | null = null;
 export function initWebPush(): void {
   // Load or generate VAPID keys
   if (fs.existsSync(VAPID_KEYS_PATH)) {
-    vapidKeys = JSON.parse(fs.readFileSync(VAPID_KEYS_PATH, 'utf-8')) as VapidKeys;
+    vapidKeys = JSON.parse(
+      fs.readFileSync(VAPID_KEYS_PATH, 'utf-8'),
+    ) as VapidKeys;
   } else {
     const keys = webpush.generateVAPIDKeys();
     vapidKeys = { publicKey: keys.publicKey, privateKey: keys.privateKey };
@@ -79,9 +81,15 @@ export async function sendPushNotification(
       if (statusCode === 404 || statusCode === 410) {
         // Subscription expired or unsubscribed — clean up
         deletePushSubscription(sub.endpoint);
-        logger.info({ endpoint: sub.endpoint }, 'Removed expired push subscription');
+        logger.info(
+          { endpoint: sub.endpoint },
+          'Removed expired push subscription',
+        );
       } else {
-        logger.warn({ err, endpoint: sub.endpoint }, 'Push notification failed');
+        logger.warn(
+          { err, endpoint: sub.endpoint },
+          'Push notification failed',
+        );
       }
     }
   }

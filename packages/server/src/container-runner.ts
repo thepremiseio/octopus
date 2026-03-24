@@ -40,6 +40,7 @@ import {
   getAgentPath,
   getAncestryChain,
   getDailyTokenUsage,
+  getAgentTree,
   getDirectChildren,
   getUnreadInboxMessages,
   insertHitlCard,
@@ -283,6 +284,28 @@ export function getToolCategory(toolName: string): string {
 // --- Octopus: Boilerplate generation (single source of truth) ---
 
 /**
+ * Render the full company org chart as indented plain text.
+ * Marks the current agent with "(you)" so they can locate themselves.
+ *
+ * Example output:
+ *   CEO
+ *     Adam — Work Coach
+ *       Eve — Research Analyst (you)
+ *     Bob — Health Coach
+ */
+function formatOrgChart(currentAgentId: string): string {
+  const tree = getAgentTree();
+  let chart = 'CEO\n';
+  for (const agent of tree) {
+    const indent = '  '.repeat(agent.depth + 1);
+    const marker = agent.agent_id === currentAgentId ? ' (you)' : '';
+    const title = agent.agent_title ? ` — ${agent.agent_title}` : '';
+    chart += `${indent}${agent.agent_name}${title}${marker}\n`;
+  }
+  return chart;
+}
+
+/**
  * Build the auto-generated boilerplate for an agent.
  * This is the canonical copy — every call site that needs boilerplate
  * should call this function rather than duplicating the text.
@@ -330,6 +353,10 @@ export function generateBoilerplate(agentId: string): string {
     '- `request_hitl(type, subject, context, options?, preference?)` — Request CEO input\n';
   bp +=
     '- `task_complete(message?)` — Call when your work is complete. **If you have a response for the CEO, you MUST pass it as the `message` argument** — text you write outside of tool calls is never shown to the CEO. Omit the argument only when your work was purely internal (e.g. processing an inbox message) and the CEO does not need to see anything.\n';
+
+  // Company hierarchy
+  bp += '\n## Company\n\n';
+  bp += formatOrgChart(agentId);
 
   // SharedSpace usage guidance
   bp += '\n## SharedSpace\n\n';

@@ -392,7 +392,9 @@ function setupRoutes(): void {
       status: 'idle',
       cost_today_eur: 0.0,
       cross_branch_trusted: agent.cross_branch_trusted === 1,
-      tool_allowlist: agent.tool_allowlist ? JSON.parse(agent.tool_allowlist) : null,
+      tool_allowlist: agent.tool_allowlist
+        ? JSON.parse(agent.tool_allowlist)
+        : null,
     });
 
     sendJson(res, 201, {
@@ -406,7 +408,9 @@ function setupRoutes(): void {
       open_hitl_cards: 0,
       last_run_ts: null,
       cross_branch_trusted: agent.cross_branch_trusted === 1,
-      tool_allowlist: agent.tool_allowlist ? JSON.parse(agent.tool_allowlist) : null,
+      tool_allowlist: agent.tool_allowlist
+        ? JSON.parse(agent.tool_allowlist)
+        : null,
     });
   });
 
@@ -438,7 +442,9 @@ function setupRoutes(): void {
       used_tokens_today: getDailyTokenUsage(agent.agent_id),
       budget_eur: null,
       cross_branch_trusted: agent.cross_branch_trusted === 1,
-      tool_allowlist: agent.tool_allowlist ? JSON.parse(agent.tool_allowlist) : null,
+      tool_allowlist: agent.tool_allowlist
+        ? JSON.parse(agent.tool_allowlist)
+        : null,
     });
   });
 
@@ -494,7 +500,9 @@ function setupRoutes(): void {
       const HANDOVER_TIMEOUT_MS = 120_000; // 2 minutes
       await Promise.race([
         completionPromise,
-        new Promise<void>((resolve) => setTimeout(resolve, HANDOVER_TIMEOUT_MS)),
+        new Promise<void>((resolve) =>
+          setTimeout(resolve, HANDOVER_TIMEOUT_MS),
+        ),
       ]);
     }
 
@@ -564,7 +572,9 @@ function setupRoutes(): void {
       used_tokens_today: getDailyTokenUsage(updated.agent_id),
       budget_eur: null,
       cross_branch_trusted: updated.cross_branch_trusted === 1,
-      tool_allowlist: updated.tool_allowlist ? JSON.parse(updated.tool_allowlist) : null,
+      tool_allowlist: updated.tool_allowlist
+        ? JSON.parse(updated.tool_allowlist)
+        : null,
     });
   });
 

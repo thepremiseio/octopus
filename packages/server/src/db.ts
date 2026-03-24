@@ -900,10 +900,22 @@ export function insertAgent(
   }
   const now = Date.now();
   const crossBranchTrusted = opts?.cross_branch_trusted ? 1 : 0;
-  const toolAllowlist = opts?.tool_allowlist ? JSON.stringify(opts.tool_allowlist) : null;
+  const toolAllowlist = opts?.tool_allowlist
+    ? JSON.stringify(opts.tool_allowlist)
+    : null;
   db.prepare(
     'INSERT INTO agents (agent_id, agent_name, agent_title, parent_id, depth, status, created_at, cross_branch_trusted, tool_allowlist) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-  ).run(agentId, agentName, agentTitle, parentId, depth, 'idle', now, crossBranchTrusted, toolAllowlist);
+  ).run(
+    agentId,
+    agentName,
+    agentTitle,
+    parentId,
+    depth,
+    'idle',
+    now,
+    crossBranchTrusted,
+    toolAllowlist,
+  );
   return {
     agent_id: agentId,
     agent_name: agentName,
@@ -943,11 +955,15 @@ export function updateAgentAttrs(
   }
   if (attrs.tool_allowlist !== undefined) {
     sets.push('tool_allowlist = ?');
-    values.push(attrs.tool_allowlist ? JSON.stringify(attrs.tool_allowlist) : null);
+    values.push(
+      attrs.tool_allowlist ? JSON.stringify(attrs.tool_allowlist) : null,
+    );
   }
   if (sets.length === 0) return;
   values.push(agentId);
-  db.prepare(`UPDATE agents SET ${sets.join(', ')} WHERE agent_id = ?`).run(...values);
+  db.prepare(`UPDATE agents SET ${sets.join(', ')} WHERE agent_id = ?`).run(
+    ...values,
+  );
 }
 
 /** Delete an agent and its entire subtree. Returns all deleted agent IDs. */
