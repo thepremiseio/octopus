@@ -22,7 +22,7 @@ interface AgentsState {
   removeSubtree: (deletedIds: string[]) => void;
   updateStatus: (agentId: string, status: AgentStatus) => void;
   updateBadge: (agentId: string, delta: number) => void;
-  updateCost: (agentId: string, costTodayEur: number) => void;
+  updateTokens: (agentId: string, usedTokensToday: number) => void;
   updateLastRun: (agentId: string, ts: number, runId?: string, exitReason?: ExitReason | null) => void;
   setSelectedAgent: (agentId: string | null) => void;
 }
@@ -102,11 +102,11 @@ export const useAgentsStore = create<AgentsState>((set) => ({
       })),
     })),
 
-  updateCost: (agentId, costTodayEur) =>
+  updateTokens: (agentId, usedTokensToday) =>
     set((state) => ({
       agents: updateAgent(state.agents, agentId, (a) => ({
         ...a,
-        cost_today_eur: costTodayEur,
+        used_tokens_today: usedTokensToday,
       })),
     })),
 
@@ -142,7 +142,7 @@ export function initAgentsSubscriptions(): void {
       parent_id: payload.parent_id,
       depth: payload.depth,
       status: payload.status,
-      cost_today_eur: payload.cost_today_eur,
+      used_tokens_today: payload.used_tokens_today,
       open_hitl_cards: 0,
       last_run_ts: null,
       last_run_exit_reason: null,
@@ -164,6 +164,6 @@ export function initAgentsSubscriptions(): void {
   });
 
   on('cost.updated', (payload) => {
-    useAgentsStore.getState().updateCost(payload.agent_id, payload.cost_today_eur);
+    useAgentsStore.getState().updateTokens(payload.agent_id, payload.used_tokens_today);
   });
 }

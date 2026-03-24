@@ -31,7 +31,7 @@ VITE_NANOCLAW_PORT=3000
 src/
 ├── main.tsx                          # Entry point — mounts App, loads global styles
 ├── App.tsx                           # Root — WS init, store seeding, layout, keyboard shortcuts
-├── types/api.ts                      # All TypeScript interfaces and event type maps
+├── types/api.ts                      # Re-exports all types from @octopus/shared
 ├── api/
 │   ├── websocket.ts                  # WS client — singleton, event emitter, auto-reconnect
 │   └── rest.ts                       # REST client — typed fetch wrappers for every endpoint
@@ -103,7 +103,7 @@ Five Zustand stores, each owning a slice of state:
 | `queues` | HITL cards, cross-branch messages, selected item | `hitl.*`, `crossbranch.*` |
 | `chat` | conversations + messages per agent | `chat.message.received` |
 | `sharedspace` | page index, current page, recently-updated set | `sharedspace.page.updated` |
-| `cost` | per-agent costs, total today | `cost.updated`, `connection.state` |
+| `cost` | per-agent token usage, total tokens today | `cost.updated`, `connection.state` |
 
 ## WebSocket client
 

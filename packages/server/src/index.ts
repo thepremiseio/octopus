@@ -9,7 +9,11 @@ import {
   TIMEZONE,
   TRIGGER_PATTERN,
 } from './config.js';
-import { startCredentialProxy, setOnExchangeFn } from './credential-proxy.js';
+import {
+  startCredentialProxy,
+  setOnExchangeFn,
+  setOnTokensFn,
+} from './credential-proxy.js';
 import './channels/index.js';
 import {
   getChannelFactory,
@@ -41,6 +45,9 @@ import {
   getNewMessages,
   getRegisteredGroup,
   getRouterState,
+  addDailyTokenUsage,
+  getDailyTokenUsage,
+  getAgentTree,
   initDatabase,
   insertLlmExchange,
   setRegisteredGroup,
@@ -530,6 +537,26 @@ async function main(): Promise<void> {
       tokens_out: exchange.tokensOut,
       ts,
     });
+  });
+
+  // Wire up token tracking from credential proxy (always active, not just debug)
+  setOnTokensFn((info) => {
+    const tokens = info.tokensIn + info.tokensOut;
+    if (tokens > 0) {
+      addDailyTokenUsage(info.agentId, tokens);
+      const agentTotal = getDailyTokenUsage(info.agentId);
+      const allAgents = getAgentTree();
+      const totalTokens = allAgents.reduce(
+        (sum, a) => sum + getDailyTokenUsage(a.agent_id),
+        0,
+      );
+      broadcast('cost.updated', {
+        agent_id: info.agentId,
+        run_id: info.runId,
+        used_tokens_today: agentTotal,
+        total_tokens_today: totalTokens,
+      });
+    }
   });
 
   // Graceful shutdown handlers

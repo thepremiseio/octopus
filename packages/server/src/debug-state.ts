@@ -68,6 +68,11 @@ export function hasRunningDebugAgents(): boolean {
   return runningDebugAgents.size > 0;
 }
 
+/** Returns true if any agent currently has a container running */
+export function hasRunningAgents(): boolean {
+  return currentRuns.size > 0;
+}
+
 /**
  * Returns the single running debug agent, or null if zero or multiple.
  * For the common case (one agent being debugged), this unambiguously
@@ -79,6 +84,19 @@ export function getSingleRunningDebugAgent(): {
 } | null {
   if (runningDebugAgents.size !== 1) return null;
   const [agentId, runId] = runningDebugAgents.entries().next().value!;
+  return { agentId, runId };
+}
+
+/**
+ * Returns the single running agent (any, not just debug), or null if
+ * zero or multiple. Used for token attribution when debug is not active.
+ */
+export function getSingleRunningAgent(): {
+  agentId: string;
+  runId: string;
+} | null {
+  if (currentRuns.size !== 1) return null;
+  const [agentId, runId] = currentRuns.entries().next().value!;
   return { agentId, runId };
 }
 

@@ -54,7 +54,7 @@ export const useAgentsStore = create<AgentsState>((set, get) => {
           parent_id: payload.parent_id,
           depth: payload.depth,
           status: payload.status,
-          cost_today_eur: payload.cost_today_eur,
+          used_tokens_today: payload.used_tokens_today,
           open_hitl_cards: 0,
           last_run_ts: null,
           cross_branch_trusted: payload.cross_branch_trusted,

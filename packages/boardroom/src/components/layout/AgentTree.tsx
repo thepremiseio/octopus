@@ -2,6 +2,12 @@ import { useState } from 'react';
 import { useAgentsStore } from '../../store/agents';
 import { useChatStore } from '../../store/chat';
 import { useCostStore } from '../../store/cost';
+
+function formatTokens(n: number): string {
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
+  if (n >= 1_000) return (n / 1_000).toFixed(1) + 'k';
+  return String(n);
+}
 import { createAgent } from '../../api/rest';
 import { PromptModal } from '../common/PromptModal';
 import { StatusDot } from '../common/StatusDot';
@@ -16,7 +22,7 @@ interface AgentTreeProps {
 export function AgentTree({ onOpenCostOverview, onSelectAgent }: AgentTreeProps) {
   const agents = useAgentsStore((s) => s.agents);
   const selectedAgentId = useAgentsStore((s) => s.selectedAgentId);
-  const totalTodayEur = useCostStore((s) => s.totalTodayEur);
+  const totalTokensToday = useCostStore((s) => s.totalTokensToday);
   const unread = useChatStore((s) => s.unread);
   const [showCreate, setShowCreate] = useState(false);
 
@@ -57,7 +63,7 @@ export function AgentTree({ onOpenCostOverview, onSelectAgent }: AgentTreeProps)
                       <Badge count={agent.open_hitl_cards} />
                     ) : (
                       <span className={styles.costFigure}>
-                        &euro;{agent.cost_today_eur.toFixed(2)}
+                        {agent.used_tokens_today > 0 ? formatTokens(agent.used_tokens_today) : ''}
                       </span>
                     )}
                   </span>
@@ -69,7 +75,7 @@ export function AgentTree({ onOpenCostOverview, onSelectAgent }: AgentTreeProps)
         })}
       </div>
       <div className={styles.footer} onClick={onOpenCostOverview}>
-        &euro;{totalTodayEur.toFixed(2)} today
+        {formatTokens(totalTokensToday)} tokens today
       </div>
 
       {showCreate && (

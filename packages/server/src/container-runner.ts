@@ -245,6 +245,9 @@ export function checkCircuitBreaker(agentId: string, runId: string): boolean {
 const taskCompleteState = new Map<string, string>();
 
 export function setTaskComplete(runId: string, message?: string): void {
+  const existing = taskCompleteState.get(runId);
+  // Don't let a subsequent silent call overwrite a message from an earlier call
+  if (existing) return;
   taskCompleteState.set(runId, message || '');
 }
 

@@ -35,7 +35,7 @@ export interface Agent {
   parent_id: string | null;
   depth: number;
   status: AgentStatus;
-  cost_today_eur: number;
+  used_tokens_today: number;
   open_hitl_cards: number;
   last_run_ts: number | null;
   cross_branch_trusted: boolean;
@@ -46,7 +46,6 @@ export interface AgentDetail extends Agent {
   agent_path: string[];
   last_run_exit_reason: ExitReason | null;
   budget_tokens: number | null;
-  used_tokens_today: number | null;
   budget_eur: number | null;
   cross_branch_trusted: boolean;
   tool_allowlist: string[] | null;
@@ -192,7 +191,7 @@ export interface ConnectionStateAgentEntry {
   parent_id: string | null;
   depth: number;
   status: AgentStatus;
-  cost_today_eur: number;
+  used_tokens_today: number;
   open_hitl_cards: number;
   cross_branch_trusted: boolean;
   tool_allowlist: string[] | null;
@@ -202,7 +201,7 @@ export interface ConnectionStatePayload {
   agents: ConnectionStateAgentEntry[];
   hitl_queue_count: number;
   crossbranch_queue_count: number;
-  total_today_eur: number;
+  total_tokens_today: number;
 }
 
 export interface HitlCardCreatedPayload {
@@ -293,7 +292,7 @@ export interface AgentCreatedPayload {
   agent_path: string[];
   depth: number;
   status: AgentStatus;
-  cost_today_eur: number;
+  used_tokens_today: number;
   cross_branch_trusted: boolean;
   tool_allowlist: string[] | null;
 }
@@ -337,8 +336,8 @@ export interface ChatMessageReceivedPayload {
 export interface CostUpdatedPayload {
   agent_id: string;
   run_id: string;
-  cost_today_eur: number;
-  total_today_eur: number;
+  used_tokens_today: number;
+  total_tokens_today: number;
 }
 
 export interface SharedSpacePageUpdatedPayload {
@@ -453,7 +452,7 @@ export interface PostAgentResponse {
   parent_id: string | null;
   depth: number;
   status: AgentStatus;
-  cost_today_eur: number;
+  used_tokens_today: number;
   open_hitl_cards: number;
   last_run_ts: number | null;
   cross_branch_trusted: boolean;

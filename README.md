@@ -34,14 +34,16 @@ CEO (human, HITL)
 └── Relationships Coach
 ```
 
-Built as a monorepo with two packages:
+Built as a monorepo with four packages:
 
 | Package | Description |
 |---------|-------------|
 | [`packages/server`](packages/server) | NanoClaw fork — agent runner, REST + WebSocket API |
 | [`packages/boardroom`](packages/boardroom) | React frontend — CEO control centre |
+| [`packages/shared`](packages/shared) | Shared API types, REST and WebSocket client factories |
+| [`packages/mobile`](packages/mobile) | Mobile PWA — WhatsApp-style agent chat with push notifications |
 
-The server manages the agent tree, spawns containers, enforces budgets, serves the REST API (`/api/v1`), and pushes domain events over WebSocket (`/ws`). The boardroom connects to `localhost:3000` for real-time updates and CEO actions.
+The server manages the agent tree, spawns containers, enforces budgets, serves the REST API (`/api/v1`), and pushes domain events over WebSocket (`/ws`). The boardroom connects to `localhost:3000` for real-time updates and CEO actions. The mobile PWA connects to the same server remotely via Caddy reverse proxy over Tailscale.
 
 ## Quick start
 

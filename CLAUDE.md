@@ -10,7 +10,10 @@ The user is the CEO. Agents are organised in a tree (departments, managers, work
 octopus/
 ├── packages/
 │   ├── server/        # NanoClaw fork — agent runner, REST + WebSocket API
-│   └── boardroom/     # React frontend — CEO control centre
+│   ├── boardroom/     # React frontend — CEO control centre
+│   ├── shared/        # Shared types, REST client, WebSocket client
+│   └── mobile/        # Mobile PWA — WhatsApp-style agent chat
+├── deploy/            # Caddyfile example and deployment notes
 ├── spec/
 │   ├── octopus-spec.md   # Full system design spec
 │   └── api-spec.md       # WebSocket + REST API contract
@@ -18,7 +21,7 @@ octopus/
 └── CLAUDE.md          # this file
 ```
 
-Uses npm workspaces. `packages/*` are the two workspace members.
+Uses npm workspaces. `packages/*` are the four workspace members.
 
 ## How the packages relate
 
@@ -26,7 +29,11 @@ The **server** (`@octopus/server`) is the backend: it manages the agent tree, sp
 
 The **boardroom** (`@octopus/boardroom`) is the frontend: a single-page React app that connects to the server's WebSocket for real-time events and calls the REST API for CEO actions (approving HITL cards, routing cross-branch messages, chatting with agents, editing SharedSpace pages).
 
-They communicate over `localhost:3000` — WebSocket at `/ws`, REST at `/api/v1`.
+The **shared** package (`@octopus/shared`) contains all API types, and configurable REST/WebSocket client factories used by both boardroom and mobile.
+
+The **mobile** package (`@octopus/mobile`) is a PWA for Android — chat-only interface for talking to agents on the go, with Web Push notifications.
+
+Server and frontends communicate over `localhost:3000` — WebSocket at `/ws`, REST at `/api/v1`.
 
 ## Quick start
 

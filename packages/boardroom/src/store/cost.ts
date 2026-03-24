@@ -3,29 +3,29 @@ import type { ConnectionStatePayload } from '../types/api';
 import { on } from '../api/websocket';
 
 interface CostState {
-  totalTodayEur: number;
-  agentCosts: Record<string, number>;
+  totalTokensToday: number;
+  agentTokens: Record<string, number>;
 
   seedFromConnectionState: (payload: ConnectionStatePayload) => void;
-  updateAgentCost: (agentId: string, costTodayEur: number, totalTodayEur: number) => void;
+  updateAgentTokens: (agentId: string, usedTokensToday: number, totalTokensToday: number) => void;
 }
 
 export const useCostStore = create<CostState>((set) => ({
-  totalTodayEur: 0,
-  agentCosts: {},
+  totalTokensToday: 0,
+  agentTokens: {},
 
   seedFromConnectionState: (payload) =>
     set({
-      totalTodayEur: payload.total_today_eur,
-      agentCosts: Object.fromEntries(
-        payload.agents.map((a) => [a.agent_id, a.cost_today_eur]),
+      totalTokensToday: payload.total_tokens_today,
+      agentTokens: Object.fromEntries(
+        payload.agents.map((a) => [a.agent_id, a.used_tokens_today]),
       ),
     }),
 
-  updateAgentCost: (agentId, costTodayEur, totalTodayEur) =>
+  updateAgentTokens: (agentId, usedTokensToday, totalTokensToday) =>
     set((state) => ({
-      totalTodayEur,
-      agentCosts: { ...state.agentCosts, [agentId]: costTodayEur },
+      totalTokensToday,
+      agentTokens: { ...state.agentTokens, [agentId]: usedTokensToday },
     })),
 }));
 
@@ -37,10 +37,10 @@ export function initCostSubscriptions(): void {
   });
 
   on('cost.updated', (payload) => {
-    useCostStore.getState().updateAgentCost(
+    useCostStore.getState().updateAgentTokens(
       payload.agent_id,
-      payload.cost_today_eur,
-      payload.total_today_eur,
+      payload.used_tokens_today,
+      payload.total_tokens_today,
     );
   });
 }

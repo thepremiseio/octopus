@@ -16,13 +16,25 @@
   text-transform: uppercase;
 }
 
-.addButton {
-  color: var(--text-muted);
+.folderRow {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 4px;
+  font-family: var(--font-mono);
   font-size: var(--font-size-body);
+  color: var(--text-muted);
 }
 
-.addButton:hover {
-  color: var(--accent);
+.folderIcon {
+  font-size: 8px;
+  flex-shrink: 0;
+}
+
+.folderLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .pageRow {
@@ -62,10 +74,4 @@
   color: var(--accent);
   font-size: 8px;
   flex-shrink: 0;
-}
-
-.rootSeparator {
-  height: 1px;
-  margin: 6px 16px 6px 8px;
-  background: var(--bg-surface-2);
 }

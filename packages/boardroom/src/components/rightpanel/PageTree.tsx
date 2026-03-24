@@ -10,13 +10,6 @@ export function PageTree({ onSelectPage }: PageTreeProps) {
   const pages = useSharedSpaceStore((s) => s.pages);
   const currentPage = useSharedSpaceStore((s) => s.currentPage);
   const recentlyUpdated = useSharedSpaceStore((s) => s.recentlyUpdated);
-
-  // Get the last segment of a page_id for display
-  function shortLabel(pageId: string): string {
-    const parts = pageId.split('/');
-    return parts[parts.length - 1] ?? pageId;
-  }
-
   const agents = useAgentsStore((s) => s.agents);
 
   function ownerName(agentId: string): string {
@@ -25,31 +18,51 @@ export function PageTree({ onSelectPage }: PageTreeProps) {
     return agent?.agent_name ?? agentId;
   }
 
-  function rootId(pageId: string): string {
-    return pageId.split('/')[0] ?? pageId;
-  }
+  // Build folder structure: track which folders we've already rendered
+  const renderedFolders = new Set<string>();
 
   return (
     <div className={styles.tree}>
       <div className={styles.header}>
         <span className={styles.headerLabel}>Pages</span>
       </div>
-      {pages.map((page, i) => {
+      {pages.map((page) => {
+        const parts = page.page_id.split('/');
+        const depth = parts.length - 1;
+        const leafName = parts[parts.length - 1] ?? page.page_id;
         const isActive = currentPage?.page_id === page.page_id;
         const isRecent = recentlyUpdated.has(page.page_id);
-        const prevPage = i > 0 ? pages[i - 1] : null;
-        const showSeparator = prevPage && rootId(prevPage.page_id) !== rootId(page.page_id);
+
+        // Render any ancestor folders that haven't been rendered yet
+        const folderHeaders: { name: string; depth: number }[] = [];
+        for (let i = 0; i < depth; i++) {
+          const folderPath = parts.slice(0, i + 1).join('/');
+          if (!renderedFolders.has(folderPath)) {
+            renderedFolders.add(folderPath);
+            folderHeaders.push({ name: parts[i]!, depth: i });
+          }
+        }
+
         return (
           <div key={page.page_id}>
-            {showSeparator && <div className={styles.rootSeparator} />}
+            {folderHeaders.map((f) => (
+              <div
+                key={f.name + f.depth}
+                className={styles.folderRow}
+                style={{ paddingLeft: 4 + f.depth * 14 }}
+              >
+                <span className={styles.folderIcon}>&#9662;</span>
+                <span className={styles.folderLabel}>{f.name}</span>
+              </div>
+            ))}
             <div
               className={`${styles.pageRow} ${isActive ? styles.pageActive : ''}`}
-              style={{ paddingLeft: 4 + (page.page_id.split('/').length - 1) * 16 }}
+              style={{ paddingLeft: 4 + depth * 14 }}
               onClick={() => onSelectPage(page.page_id)}
             >
-              {isRecent && <span className={styles.recentDot}>&bull;</span>}
-              <span className={styles.pageLabel}>{shortLabel(page.page_id)}</span>
+              <span className={styles.pageLabel}>{leafName}</span>
               <span className={styles.pageOwner}>{ownerName(page.owner)}</span>
+              {isRecent && <span className={styles.recentDot}>&bull;</span>}
             </div>
           </div>
         );

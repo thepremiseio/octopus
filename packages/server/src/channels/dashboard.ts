@@ -202,7 +202,7 @@ function buildConnectionState(): Record<string, unknown> {
     parent_id: a.parent_id,
     depth: a.depth,
     status: a.status,
-    cost_today_eur: 0.0, // Placeholder — cost tracking is future
+    used_tokens_today: getDailyTokenUsage(a.agent_id),
     open_hitl_cards: countOpenHitlCardsForSubtree(a.agent_id),
     cross_branch_trusted: a.cross_branch_trusted === 1,
     tool_allowlist: a.tool_allowlist ? JSON.parse(a.tool_allowlist) : null,
@@ -215,7 +215,7 @@ function buildConnectionState(): Record<string, unknown> {
     agents: agentStates,
     hitl_queue_count: hitlCards.length,
     crossbranch_queue_count: cbMessages.length,
-    total_today_eur: 0.0,
+    total_tokens_today: agents.reduce((sum, a) => sum + getDailyTokenUsage(a.agent_id), 0),
   };
 }
 
@@ -303,7 +303,7 @@ function setupRoutes(): void {
         parent_id: a.parent_id,
         depth: a.depth,
         status: a.status,
-        cost_today_eur: 0.0,
+        used_tokens_today: getDailyTokenUsage(a.agent_id),
         open_hitl_cards: countOpenHitlCardsForSubtree(a.agent_id),
         last_run_ts: lastRun?.started_ts || null,
         cross_branch_trusted: a.cross_branch_trusted === 1,
@@ -390,7 +390,7 @@ function setupRoutes(): void {
       agent_path: agentPath,
       depth: agent.depth,
       status: 'idle',
-      cost_today_eur: 0.0,
+      used_tokens_today: 0,
       cross_branch_trusted: agent.cross_branch_trusted === 1,
       tool_allowlist: agent.tool_allowlist
         ? JSON.parse(agent.tool_allowlist)
@@ -404,7 +404,7 @@ function setupRoutes(): void {
       parent_id: body.parent_id || null,
       depth: agent.depth,
       status: 'idle',
-      cost_today_eur: 0.0,
+      used_tokens_today: 0,
       open_hitl_cards: 0,
       last_run_ts: null,
       cross_branch_trusted: agent.cross_branch_trusted === 1,
@@ -434,12 +434,11 @@ function setupRoutes(): void {
       agent_path: getAgentPath(agent.agent_id),
       depth: agent.depth,
       status: agent.status,
-      cost_today_eur: 0.0,
+      used_tokens_today: getDailyTokenUsage(agent.agent_id),
       open_hitl_cards: countOpenHitlCardsForSubtree(agent.agent_id),
       last_run_ts: lastRun?.started_ts || null,
       last_run_exit_reason: lastRun?.exit_reason || null,
       budget_tokens: null, // TODO: parse from CLAUDE.md
-      used_tokens_today: getDailyTokenUsage(agent.agent_id),
       budget_eur: null,
       cross_branch_trusted: agent.cross_branch_trusted === 1,
       tool_allowlist: agent.tool_allowlist
@@ -564,12 +563,11 @@ function setupRoutes(): void {
       agent_path: getAgentPath(updated.agent_id),
       depth: updated.depth,
       status: updated.status,
-      cost_today_eur: 0.0,
+      used_tokens_today: getDailyTokenUsage(updated.agent_id),
       open_hitl_cards: countOpenHitlCardsForSubtree(updated.agent_id),
       last_run_ts: lastRun?.started_ts || null,
       last_run_exit_reason: lastRun?.exit_reason || null,
       budget_tokens: null,
-      used_tokens_today: getDailyTokenUsage(updated.agent_id),
       budget_eur: null,
       cross_branch_trusted: updated.cross_branch_trusted === 1,
       tool_allowlist: updated.tool_allowlist

@@ -15,6 +15,7 @@ import {
   getAncestryChain,
   getTopLevelBranch,
   getAgentTree,
+  resolveAgent,
   upsertSharedspaceIndex,
   deleteSharedspaceIndex,
   listSharedspaceIndex,
@@ -129,12 +130,16 @@ function parseAccess(raw: unknown): AccessLevel {
     ) {
       return s;
     }
-    // Could be a JSON-encoded array
+    // Could be a JSON-encoded array or bracket-notation list like [Laura, Arthur]
     try {
       const parsed = JSON.parse(s);
       if (Array.isArray(parsed)) return parsed.map(String);
     } catch {
-      // not JSON
+      // Not valid JSON — try bracket-notation comma-separated list
+      const match = s.match(/^\[(.+)\]$/);
+      if (match) {
+        return match[1]!.split(',').map((v) => v.trim()).filter(Boolean);
+      }
     }
   }
   // Default fallback
@@ -176,9 +181,12 @@ export function canRead(
     return ownerBranch.agent_id === readerBranch.agent_id;
   }
 
-  // Explicit agent list — owner and CEO are always implicit
+  // Explicit agent list (names or IDs) — owner and CEO are always implicit
   if (Array.isArray(access)) {
-    return access.includes(agentId);
+    return access.some((entry) => {
+      const resolved = resolveAgent(entry);
+      return resolved?.agent_id === agentId;
+    });
   }
 
   return false;

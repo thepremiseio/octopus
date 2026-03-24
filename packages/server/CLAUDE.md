@@ -25,7 +25,7 @@ CEO (Boardroom) ←── WebSocket + REST ──→ Server (this package)
                                             ├─ agent tree (SQLite)
                                             ├─ HITL queue (SQLite)
                                             ├─ cross-branch queue (SQLite)
-                                            ├─ SharedSpace pages (SQLite)
+                                            ├─ SharedSpace vault (markdown files, SQLite index)
                                             ├─ activity feed (SQLite)
                                             ├─ token budgets (SQLite)
                                             │
@@ -45,13 +45,15 @@ All persistent state is in a single SQLite file at `store/messages.db`.
 | `src/container-runner.ts` | Spawns agent containers, assembles system prompts, records token usage, enforces daily budget and circuit breaker, broadcasts domain events over WebSocket |
 | `src/sharedspace.ts` | Obsidian-compatible markdown vault — frontmatter parsing, access control (ceo-only/owner-and-above/branch/everyone/explicit list), read/write/delete/list operations, agent context index |
 | `src/vault-watcher.ts` | File watcher (chokidar) — keeps SQLite index in sync with filesystem vault, full scan on startup, debounced event handlers, creates starter pages on first run |
-| `src/tools.ts` | Agent tool implementations: `sharedspace_read`, `sharedspace_write`, `sharedspace_list`, `send_message`, `request_hitl` — each enforces access rules and emits events |
+| `src/tools.ts` | Agent tool implementations: `sharedspace_read`, `sharedspace_write`, `sharedspace_list`, `send_message`, `request_hitl`, `task_complete` — each enforces access rules and emits events |
 | `src/channels/dashboard.ts` | WebSocket + REST API server (replaces WhatsApp channel) — implements the full contract from `spec/api-spec.md` |
 | `src/channels/registry.ts` | Channel factory registry — channels self-register on import |
 | `src/channels/index.ts` | Barrel file — imports channels to trigger registration |
 | `src/config.ts` | Environment-driven configuration constants |
 | `src/types.ts` | TypeScript interfaces for channels, messages, tasks |
-| `src/credential-proxy.ts` | HTTP proxy that injects LLM API credentials so containers never see real keys |
+| `src/credential-proxy.ts` | HTTP proxy that injects LLM API credentials so containers never see real keys. Also captures token usage per LLM exchange for live tracking |
+| `src/debug-state.ts` | Tracks which agents have debug subscribers and current run context for exchange capture and token attribution |
+| `src/web-push.ts` | Web Push (VAPID) — key generation, subscription management, push notification dispatch for mobile PWA |
 | `src/container-runtime.ts` | Docker/Apple Container abstraction — start, stop, mount flags, host gateway |
 | `src/ipc.ts` | Polls IPC files written by agents inside containers |
 | `src/task-scheduler.ts` | Cron-based scheduled task execution |
@@ -65,12 +67,14 @@ The database has two layers: legacy NanoClaw tables (chats, messages, registered
 
 | Table | Purpose |
 |-------|---------|
-| `agents` | Agent hierarchy tree — id, name, parent_id, depth, status |
+| `agents` | Agent hierarchy tree — id, name, agent_title, parent_id, depth, status, cross_branch_trusted, tool_allowlist |
 | `agent_runs` | Execution history — run_id, trigger_type, tokens, exit_reason |
 | `activity_feed` | Per-tool-call log — entry_type (tool_call/tool_result), tool_category (read/write/hitl/message/shell) |
 | `daily_token_usage` | Budget tracking — (agent_id, date) → tokens_used |
-| `sharedspace_index` | Vault page metadata index (no body) — page_id, title, owner, access, summary, updated, file_path |
+| `sharedspace_index` | Vault page metadata index (no body) — page_id, owner, access, summary, updated, file_path |
 | `sharedspace_index_cache` | Cached per-agent readable page index (invalidated on vault changes) |
+| `llm_exchanges` | Debug inspector — captured LLM request/response pairs per run with token counts |
+| `push_subscriptions` | Web Push subscriptions for mobile PWA notifications |
 | `hitl_queue` | HITL cards — card_type (approval/choice/fyi/circuit_breaker), serialised message array, resolution |
 | `cross_branch_queue` | Inter-branch messages awaiting CEO review — sender, recipient, serialised message array, status |
 | `conversations` / `conversation_messages` | Multi-turn CEO-agent chat |
@@ -81,8 +85,8 @@ The database has two layers: legacy NanoClaw tables (chats, messages, registered
 At container start, the prompt is assembled in order:
 
 1. Agent's `CLAUDE.md` (role definition, written by CEO)
-2. Auto-generated boilerplate (hierarchy position, manager name, escalation instruction, inbox instruction, approval policy, available tools)
-3. Cached SharedSpace index (readable pages with titles and summaries)
+2. Auto-generated boilerplate (hierarchy position, manager name, escalation instruction, inbox instruction, approval policy, available tools, company org chart)
+3. Cached SharedSpace index (readable pages with summaries)
 
 If the agent has unread inbox messages, an inbox notification is prepended to the boilerplate section.
 
@@ -94,7 +98,7 @@ Read access is controlled by the `access` field in each page's YAML frontmatter:
 - **`owner-and-above`** — owner + ancestry chain up to CEO
 - **`branch`** — all agents in the same top-level branch as the owner
 - **`everyone`** — all agents
-- **Explicit list** — array of agent IDs (e.g. `["agent-a", "agent-b"]`)
+- **Explicit list** — array of agent names or IDs (e.g. `[Laura, Arthur]`)
 - **Write**: only the page owner and CEO
 - **CEO**: full read/write access everywhere
 

@@ -23,7 +23,9 @@ import { request as httpRequest, RequestOptions } from 'http';
 import { readEnvFile } from './env.js';
 import { logger } from './logger.js';
 import {
+  hasRunningAgents,
   hasRunningDebugAgents,
+  getSingleRunningAgent,
   getSingleRunningDebugAgent,
   nextExchangeIndex,
 } from './debug-state.js';
@@ -49,6 +51,20 @@ let onExchangeFn: OnExchangeFn = () => {};
 
 export function setOnExchangeFn(fn: OnExchangeFn): void {
   onExchangeFn = fn;
+}
+
+/** Callback for token tracking (always called, not just debug) */
+export type OnTokensFn = (info: {
+  agentId: string;
+  runId: string;
+  tokensIn: number;
+  tokensOut: number;
+}) => void;
+
+let onTokensFn: OnTokensFn = () => {};
+
+export function setOnTokensFn(fn: OnTokensFn): void {
+  onTokensFn = fn;
 }
 
 /**
@@ -189,12 +205,15 @@ export function startCredentialProxy(
         const body = Buffer.concat(chunks);
         const reqUrl = req.url || '/';
 
-        // Check if this is a Messages API call and we have a debug agent running.
+        // Check if this is a Messages API call.
         // Strip query string before matching — SDKs may append ?beta=... params.
         const urlPath = reqUrl.split('?')[0];
         const isMessagesEndpoint =
           req.method === 'POST' && urlPath.endsWith('/v1/messages');
-        const shouldCapture = isMessagesEndpoint && hasRunningDebugAgents();
+        // Always capture Messages responses when any agent is running (for token tracking).
+        // Debug exchange recording only happens when a debug subscriber is active.
+        const shouldCapture = isMessagesEndpoint && hasRunningAgents();
+        const shouldRecordDebug = shouldCapture && hasRunningDebugAgents();
 
         const headers: Record<string, string | number | string[] | undefined> =
           {
@@ -242,7 +261,7 @@ export function startCredentialProxy(
           (upRes) => {
             if (shouldCapture) {
               // Tee the response: forward every chunk to the container
-              // in real-time while also buffering for debug capture.
+              // in real-time while also buffering for token extraction.
               // This preserves SSE streaming for the container's SDK.
               res.writeHead(upRes.statusCode!, upRes.headers);
               const responseChunks: Buffer[] = [];
@@ -255,50 +274,57 @@ export function startCredentialProxy(
 
                 const rawResponse = Buffer.concat(responseChunks).toString();
 
-                // Attribute to the running debug agent
-                const target = getSingleRunningDebugAgent();
-                if (!target) {
-                  logger.debug(
-                    'Debug capture skipped: no single running debug agent',
-                  );
-                  return;
-                }
-
                 try {
-                  // For SSE streams, reconstruct the final response from
-                  // the message_stop event which carries the full message.
-                  // For non-streaming JSON, use the body directly.
                   const responseJson =
                     extractResponseFromSSE(rawResponse) || rawResponse;
                   const { tokensIn, tokensOut } = extractTokens(responseJson);
-                  const exchangeIndex = nextExchangeIndex(target.agentId);
 
-                  logger.debug(
-                    {
+                  // Always track tokens for the running agent
+                  const target =
+                    getSingleRunningDebugAgent() || getSingleRunningAgent();
+                  if (target && (tokensIn > 0 || tokensOut > 0)) {
+                    onTokensFn({
                       agentId: target.agentId,
                       runId: target.runId,
-                      exchangeIndex,
                       tokensIn,
                       tokensOut,
-                    },
-                    'Debug exchange captured',
-                  );
+                    });
+                  }
 
-                  onExchangeFn({
-                    agentId: target.agentId,
-                    runId: target.runId,
-                    exchangeIndex,
-                    messagesJson: body.toString(),
-                    responseJson,
-                    tokensIn,
-                    tokensOut,
-                  });
+                  // Full exchange capture only when debug is active
+                  if (shouldRecordDebug) {
+                    const debugTarget = getSingleRunningDebugAgent();
+                    if (debugTarget) {
+                      const exchangeIndex = nextExchangeIndex(
+                        debugTarget.agentId,
+                      );
+                      logger.debug(
+                        {
+                          agentId: debugTarget.agentId,
+                          runId: debugTarget.runId,
+                          exchangeIndex,
+                          tokensIn,
+                          tokensOut,
+                        },
+                        'Debug exchange captured',
+                      );
+                      onExchangeFn({
+                        agentId: debugTarget.agentId,
+                        runId: debugTarget.runId,
+                        exchangeIndex,
+                        messagesJson: body.toString(),
+                        responseJson,
+                        tokensIn,
+                        tokensOut,
+                      });
+                    }
+                  }
                 } catch (err) {
-                  logger.warn({ err }, 'Failed to capture debug exchange');
+                  logger.warn({ err }, 'Failed to capture exchange tokens');
                 }
               });
             } else {
-              // Normal pass-through (no capture)
+              // Normal pass-through (no capture needed — not a Messages endpoint)
               res.writeHead(upRes.statusCode!, upRes.headers);
               upRes.pipe(res);
             }

@@ -8,7 +8,7 @@ interface TopbarProps {
 }
 
 export function Topbar({ connectionStatus, onOpenCostOverview }: TopbarProps) {
-  const totalTodayEur = useCostStore((s) => s.totalTodayEur);
+  const totalTokensToday = useCostStore((s) => s.totalTokensToday);
 
   const dotClass =
     connectionStatus === 'connected'
@@ -27,7 +27,7 @@ export function Topbar({ connectionStatus, onOpenCostOverview }: TopbarProps) {
         Ctrl-K command palette &middot; Esc queue &middot; 1&ndash;9 choice &middot; A approve &middot; R reject
       </div>
       <button className={styles.costButton} onClick={onOpenCostOverview}>
-        &euro;{totalTodayEur.toFixed(2)} today
+        {totalTokensToday.toLocaleString()} tokens today
       </button>
     </header>
   );

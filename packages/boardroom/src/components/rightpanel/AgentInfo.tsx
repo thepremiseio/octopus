@@ -107,8 +107,8 @@ export function AgentInfo({ agentId, onEditClaudeMd, onViewBoilerplate }: AgentI
         </span>
       </div>
       <div className={styles.row}>
-        <span className={styles.rowLabel}>Cost today</span>
-        <span className={styles.rowValue}>&euro;{agent.cost_today_eur.toFixed(2)}</span>
+        <span className={styles.rowLabel}>Tokens today</span>
+        <span className={styles.rowValue}>{agent.used_tokens_today?.toLocaleString() ?? '0'}</span>
       </div>
       {agent.budget_tokens !== null && agent.used_tokens_today !== null && (
         <div className={styles.row}>
