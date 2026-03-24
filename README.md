@@ -21,6 +21,8 @@ Agents are organised in a tree — departments, managers, workers — with the u
 
 ## Architecture
 
+An example of how the agent tree could be constructed:
+
 ```
 CEO (human, HITL)
 ├── Work Coach

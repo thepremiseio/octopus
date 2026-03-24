@@ -6,6 +6,7 @@ import {
   createSchedule,
   deleteAgent,
   resetBudget,
+  updateAgent,
 } from '../../api/rest';
 import { useAgentsStore } from '../../store/agents';
 import { PromptModal } from '../common/PromptModal';
@@ -21,6 +22,7 @@ interface AgentInfoProps {
 type ModalState =
   | { kind: 'schedule' }
   | { kind: 'delete' }
+  | { kind: 'tool_allowlist' }
   | null;
 
 export function AgentInfo({ agentId, onEditClaudeMd, onViewBoilerplate }: AgentInfoProps) {
@@ -65,6 +67,29 @@ export function AgentInfo({ agentId, onEditClaudeMd, onViewBoilerplate }: AgentI
     setModal(null);
   }
 
+  async function handleToggleTrusted() {
+    const updated = await updateAgent(agentId, {
+      cross_branch_trusted: !agent!.cross_branch_trusted,
+    });
+    setAgent(updated);
+  }
+
+  function handleToolAllowlistSubmit(values: Record<string, string>) {
+    const raw = values.tools?.trim();
+    const allowlist = raw
+      ? raw.split(',').map((s) => s.trim()).filter(Boolean)
+      : null;
+    void updateAgent(agentId, { tool_allowlist: allowlist }).then((updated) => {
+      setAgent(updated);
+    });
+    setModal(null);
+  }
+
+  async function handleClearAllowlist() {
+    const updated = await updateAgent(agentId, { tool_allowlist: null });
+    setAgent(updated);
+  }
+
   return (
     <div className={styles.info}>
       <div className={styles.name}>{agent.agent_name}</div>
@@ -97,6 +122,43 @@ export function AgentInfo({ agentId, onEditClaudeMd, onViewBoilerplate }: AgentI
             )}
           </span>
         </div>
+      )}
+
+      <div className={styles.sectionLabel}>Permissions</div>
+      <div className={styles.row}>
+        <span className={styles.rowLabel}>Cross-branch trusted</span>
+        <span
+          className={`${styles.rowValue} ${styles.toggleLink}`}
+          onClick={() => void handleToggleTrusted()}
+        >
+          {agent.cross_branch_trusted ? 'yes' : 'no'}
+        </span>
+      </div>
+      <div className={styles.row}>
+        <span className={styles.rowLabel}>Tool allowlist</span>
+        <span className={styles.rowValue}>
+          {agent.tool_allowlist
+            ? agent.tool_allowlist.length + ' tools'
+            : 'all'}
+        </span>
+      </div>
+      {agent.tool_allowlist && (
+        <div className={styles.allowlistItems}>
+          {agent.tool_allowlist.map((t) => (
+            <span key={t} className={styles.allowlistTag}>{t}</span>
+          ))}
+          <span className={styles.addLink} onClick={() => void handleClearAllowlist()}>clear</span>
+        </div>
+      )}
+      {!agent.tool_allowlist && (
+        <span className={styles.addLink} onClick={() => setModal({ kind: 'tool_allowlist' })}>
+          + restrict
+        </span>
+      )}
+      {agent.tool_allowlist && (
+        <span className={styles.addLink} onClick={() => setModal({ kind: 'tool_allowlist' })}>
+          edit
+        </span>
       )}
 
       <div className={styles.sectionLabel}>Scheduled Tasks</div>
@@ -151,6 +213,23 @@ export function AgentInfo({ agentId, onEditClaudeMd, onViewBoilerplate }: AgentI
           danger
           submitLabel="Delete"
           onSubmit={handleDeleteSubmit}
+          onCancel={() => setModal(null)}
+        />
+      )}
+
+      {modal?.kind === 'tool_allowlist' && (
+        <PromptModal
+          title="Tool allowlist"
+          fields={[
+            {
+              key: 'tools',
+              label: 'Comma-separated tool names',
+              placeholder: 'sharedspace_read, sharedspace_list, request_hitl, task_complete',
+              defaultValue: agent.tool_allowlist?.join(', ') ?? '',
+            },
+          ]}
+          submitLabel="Save"
+          onSubmit={handleToolAllowlistSubmit}
           onCancel={() => setModal(null)}
         />
       )}

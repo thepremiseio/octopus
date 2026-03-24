@@ -37,7 +37,6 @@ function indexFile(filePath: string): boolean {
 
   upsertSharedspaceIndex({
     page_id: page.page_id,
-    title: page.title,
     owner: page.owner,
     access: page.access,
     summary: page.summary,
@@ -62,24 +61,24 @@ function createStarterPages(): void {
   writePage(
     'policies/hitl',
     {
-      title: 'HITL Approval Policy',
-      summary: 'When agents should request human approval before acting',
+      summary:
+        'Wanneer agents menselijke goedkeuring moeten vragen voor ze handelen',
       owner: 'ceo',
       access: 'everyone',
       body: [
-        '# HITL Approval Policy',
+        '# HITL Goedkeuringsbeleid',
         '',
-        'Agents must request CEO approval (`request_hitl` with type `approval`) before:',
+        'Agents moeten goedkeuring van de CEO vragen (`request_hitl` met type `approval`) voordat ze:',
         '',
-        '- Sending external communications (emails, messages to external services)',
-        '- Making purchases or financial commitments',
-        '- Deleting or archiving data that cannot be easily recovered',
-        '- Changing access controls or permissions',
-        '- Any action that is difficult to reverse',
+        '- Externe communicatie versturen (e-mails, berichten naar externe diensten)',
+        '- Aankopen doen of financiële verplichtingen aangaan',
+        '- Gegevens verwijderen of archiveren die niet eenvoudig hersteld kunnen worden',
+        '- Toegangsrechten of permissies wijzigen',
+        '- Acties uitvoeren die moeilijk terug te draaien zijn',
         '',
-        'Agents should use `choice` cards when they have identified multiple valid approaches and want CEO input on direction.',
+        'Agents moeten `choice`-kaarten gebruiken wanneer ze meerdere geldige aanpakken hebben geïdentificeerd en input van de CEO willen over de richting.',
         '',
-        'Agents should use `fyi` cards for status updates on long-running work — these are non-blocking.',
+        'Agents moeten `fyi`-kaarten gebruiken voor statusupdates bij langlopend werk — deze zijn niet-blokkerend.',
       ].join('\n'),
     },
     'ceo',
@@ -93,10 +92,16 @@ function createStarterPages(): void {
  * - Remove index entries for files that no longer exist on disk
  */
 function fullScan(): void {
-  const isNew = !fs.existsSync(VAULT_PATH);
-  if (isNew) {
+  if (!fs.existsSync(VAULT_PATH)) {
     fs.mkdirSync(VAULT_PATH, { recursive: true });
     logger.info({ vault: VAULT_PATH }, 'Created vault directory');
+  }
+
+  // Seed starter pages if the vault has no .md files yet
+  const hasPages = fs
+    .readdirSync(VAULT_PATH, { recursive: true })
+    .some((f) => String(f).endsWith('.md'));
+  if (!hasPages) {
     createStarterPages();
   }
 
@@ -146,7 +151,6 @@ function handleAddOrChange(filePath: string): void {
         const page = readPageFromDisk(filePath);
         broadcast('sharedspace.page.updated', {
           page_id: pageId,
-          title: page?.title || '',
           summary: page?.summary || '',
           owner_agent_id: page?.owner || 'ceo',
           updated_by_agent_id: 'filesystem',
@@ -175,7 +179,6 @@ function handleUnlink(filePath: string): void {
       invalidateAllAgentIndices();
       broadcast('sharedspace.page.updated', {
         page_id: pageId,
-        title: '',
         summary: '',
         owner_agent_id: 'unknown',
         updated_by_agent_id: 'filesystem',

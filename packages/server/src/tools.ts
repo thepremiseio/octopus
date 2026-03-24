@@ -149,7 +149,6 @@ export function sharedspaceRead(
       success: true,
       data: {
         page_id: page.page_id,
-        title: page.title,
         owner: page.owner,
         access: page.access,
         summary: page.summary,
@@ -178,7 +177,6 @@ export function sharedspaceWrite(
   agentId: string,
   pageId: string,
   content: {
-    title: string;
     summary: string;
     body: string;
     owner?: string;
@@ -190,15 +188,14 @@ export function sharedspaceWrite(
     agentId,
     runId,
     'sharedspace_write',
-    `id: ${pageId}, title: ${content.title}`,
-    `Page: ${pageId}\nTitle: ${content.title}\nSummary: ${content.summary}\n\n${content.body}`,
+    `id: ${pageId}`,
+    `Page: ${pageId}\nSummary: ${content.summary}\n\n${content.body}`,
   );
 
   try {
     const page = writePage(
       pageId,
       {
-        title: content.title,
         summary: content.summary,
         body: content.body,
         owner: content.owner || agentId,
@@ -219,7 +216,7 @@ export function sharedspaceWrite(
     checkCircuitBreaker(agentId, runId);
     return {
       success: true,
-      data: { page_id: page.page_id, title: page.title, owner: page.owner },
+      data: { page_id: page.page_id, owner: page.owner },
     };
   } catch (err) {
     const msg =
@@ -266,7 +263,6 @@ export function sharedspaceList(
     success: true,
     data: pages.map((p) => ({
       page_id: p.page_id,
-      title: p.title,
       summary: p.summary,
       owner: p.owner,
       access: p.access,
@@ -333,10 +329,14 @@ export function sendMessage(
     recipientBranch &&
     senderBranch.agent_id === recipientBranch.agent_id;
 
+  // cross_branch_trusted agents bypass the CEO queue for cross-branch messages
+  const isTrusted = sender.cross_branch_trusted === 1;
+
   const messageId = generateId('msg');
 
-  if (isSameBranch) {
-    // Same-branch: deliver directly
+  if (isSameBranch || isTrusted) {
+    // Same-branch or trusted cross-branch: deliver directly
+    const isCrossBranch = !isSameBranch;
     insertInboxMessage({
       message_id: messageId,
       recipient_agent_id: recipientId,
@@ -344,7 +344,7 @@ export function sendMessage(
       from_agent_name: sender.agent_name,
       subject: args.subject,
       body: args.body,
-      cross_branch: 0,
+      cross_branch: isCrossBranch ? 1 : 0,
       delivered_ts: Date.now(),
     });
 
@@ -354,7 +354,7 @@ export function sendMessage(
       from_agent_id: senderAgentId,
       from_agent_name: sender.agent_name,
       subject: args.subject,
-      cross_branch: false,
+      cross_branch: isCrossBranch,
     });
 
     // Trigger recipient agent run with the inbox message as context

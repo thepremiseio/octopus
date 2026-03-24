@@ -92,6 +92,8 @@ function createSchema(database: Database.Database): void {
       depth INTEGER NOT NULL DEFAULT 0,
       status TEXT NOT NULL DEFAULT 'idle',
       created_at INTEGER NOT NULL,
+      cross_branch_trusted INTEGER NOT NULL DEFAULT 0,
+      tool_allowlist TEXT,
       FOREIGN KEY (parent_id) REFERENCES agents(agent_id)
     );
     CREATE INDEX IF NOT EXISTS idx_agents_parent ON agents(parent_id);
@@ -139,9 +141,10 @@ function createSchema(database: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_runs_agent ON agent_runs(agent_id, started_ts);
 
     -- Octopus: SharedSpace vault index (frontmatter cache, no body)
+    -- Drop and recreate if schema changed (title column removed)
+    DROP TABLE IF EXISTS sharedspace_index;
     CREATE TABLE IF NOT EXISTS sharedspace_index (
       page_id   TEXT PRIMARY KEY,
-      title     TEXT NOT NULL,
       owner     TEXT NOT NULL,
       access    TEXT NOT NULL,
       summary   TEXT NOT NULL,
@@ -310,6 +313,21 @@ function createSchema(database: Database.Database): void {
   } catch {
     /* column already exists */
   }
+
+  // Add cross_branch_trusted and tool_allowlist to agents (migration for existing DBs)
+  try {
+    database.exec(
+      `ALTER TABLE agents ADD COLUMN cross_branch_trusted INTEGER NOT NULL DEFAULT 0`,
+    );
+  } catch {
+    /* column already exists */
+  }
+  try {
+    database.exec(`ALTER TABLE agents ADD COLUMN tool_allowlist TEXT`);
+  } catch {
+    /* column already exists */
+  }
+
 }
 
 export function initDatabase(): void {
@@ -817,6 +835,8 @@ export interface AgentRow {
   depth: number;
   status: string;
   created_at: number;
+  cross_branch_trusted: number; // 0 or 1 (SQLite boolean)
+  tool_allowlist: string | null; // JSON array or null
 }
 
 /** Get full agent tree ordered depth-first */
@@ -860,6 +880,7 @@ export function insertAgent(
   agentName: string,
   agentTitle: string,
   parentId: string | null,
+  opts?: { cross_branch_trusted?: boolean; tool_allowlist?: string[] | null },
 ): AgentRow {
   let depth = 0;
   if (parentId) {
@@ -868,9 +889,11 @@ export function insertAgent(
     depth = parent.depth + 1;
   }
   const now = Date.now();
+  const crossBranchTrusted = opts?.cross_branch_trusted ? 1 : 0;
+  const toolAllowlist = opts?.tool_allowlist ? JSON.stringify(opts.tool_allowlist) : null;
   db.prepare(
-    'INSERT INTO agents (agent_id, agent_name, agent_title, parent_id, depth, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-  ).run(agentId, agentName, agentTitle, parentId, depth, 'idle', now);
+    'INSERT INTO agents (agent_id, agent_name, agent_title, parent_id, depth, status, created_at, cross_branch_trusted, tool_allowlist) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+  ).run(agentId, agentName, agentTitle, parentId, depth, 'idle', now, crossBranchTrusted, toolAllowlist);
   return {
     agent_id: agentId,
     agent_name: agentName,
@@ -879,7 +902,42 @@ export function insertAgent(
     depth,
     status: 'idle',
     created_at: now,
+    cross_branch_trusted: crossBranchTrusted,
+    tool_allowlist: toolAllowlist,
   };
+}
+
+/** Update mutable agent attributes. Only provided fields are changed. */
+export function updateAgentAttrs(
+  agentId: string,
+  attrs: {
+    agent_name?: string;
+    agent_title?: string;
+    cross_branch_trusted?: boolean;
+    tool_allowlist?: string[] | null;
+  },
+): void {
+  const sets: string[] = [];
+  const values: unknown[] = [];
+  if (attrs.agent_name !== undefined) {
+    sets.push('agent_name = ?');
+    values.push(attrs.agent_name);
+  }
+  if (attrs.agent_title !== undefined) {
+    sets.push('agent_title = ?');
+    values.push(attrs.agent_title);
+  }
+  if (attrs.cross_branch_trusted !== undefined) {
+    sets.push('cross_branch_trusted = ?');
+    values.push(attrs.cross_branch_trusted ? 1 : 0);
+  }
+  if (attrs.tool_allowlist !== undefined) {
+    sets.push('tool_allowlist = ?');
+    values.push(attrs.tool_allowlist ? JSON.stringify(attrs.tool_allowlist) : null);
+  }
+  if (sets.length === 0) return;
+  values.push(agentId);
+  db.prepare(`UPDATE agents SET ${sets.join(', ')} WHERE agent_id = ?`).run(...values);
 }
 
 /** Delete an agent and its entire subtree. Returns all deleted agent IDs. */
@@ -956,6 +1014,18 @@ export function updateAgentStatus(agentId: string, status: string): void {
     status,
     agentId,
   );
+}
+
+/**
+ * Reset all agents with non-idle status back to idle.
+ * Called at server startup to clear stale statuses from a previous process
+ * (e.g. agents left in 'active' because the server was restarted mid-run).
+ */
+export function resetAllAgentStatuses(): number {
+  const result = db
+    .prepare("UPDATE agents SET status = 'idle' WHERE status != 'idle'")
+    .run();
+  return result.changes;
 }
 
 /** Get the agent_path (display names from top-level to this agent) */
@@ -1214,7 +1284,6 @@ export function pruneOldRuns(agentId: string, keep: number = 10): void {
 
 export interface SharedspaceIndexRow {
   page_id: string;
-  title: string;
   owner: string;
   access: string; // JSON-encoded AccessLevel
   summary: string;
@@ -1224,7 +1293,6 @@ export interface SharedspaceIndexRow {
 
 export function upsertSharedspaceIndex(page: {
   page_id: string;
-  title: string;
   owner: string;
   access: unknown; // AccessLevel — serialised to JSON
   summary: string;
@@ -1234,10 +1302,9 @@ export function upsertSharedspaceIndex(page: {
   const accessJson =
     typeof page.access === 'string' ? page.access : JSON.stringify(page.access);
   db.prepare(
-    `INSERT INTO sharedspace_index (page_id, title, owner, access, summary, updated, file_path)
-     VALUES (?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO sharedspace_index (page_id, owner, access, summary, updated, file_path)
+     VALUES (?, ?, ?, ?, ?, ?)
      ON CONFLICT(page_id) DO UPDATE SET
-       title = excluded.title,
        owner = excluded.owner,
        access = excluded.access,
        summary = excluded.summary,
@@ -1245,7 +1312,6 @@ export function upsertSharedspaceIndex(page: {
        file_path = excluded.file_path`,
   ).run(
     page.page_id,
-    page.title,
     page.owner,
     accessJson,
     page.summary,
@@ -1694,3 +1760,4 @@ function migrateJsonState(): void {
     }
   }
 }
+

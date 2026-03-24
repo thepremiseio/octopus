@@ -37,6 +37,7 @@ import {
   insertConversationMessage,
   insertInboxMessage,
   resetDailyTokenUsage,
+  updateAgentAttrs,
   resolveHitlCard,
   updateAgentStatus,
   updateCrossBranchMessageStatus,
@@ -183,6 +184,8 @@ function buildConnectionState(): Record<string, unknown> {
     status: a.status,
     cost_today_eur: 0.0, // Placeholder — cost tracking is future
     open_hitl_cards: countOpenHitlCardsForSubtree(a.agent_id),
+    cross_branch_trusted: a.cross_branch_trusted === 1,
+    tool_allowlist: a.tool_allowlist ? JSON.parse(a.tool_allowlist) : null,
   }));
 
   const hitlCards = getOpenHitlCards();
@@ -283,6 +286,8 @@ function setupRoutes(): void {
         cost_today_eur: 0.0,
         open_hitl_cards: countOpenHitlCardsForSubtree(a.agent_id),
         last_run_ts: lastRun?.started_ts || null,
+        cross_branch_trusted: a.cross_branch_trusted === 1,
+        tool_allowlist: a.tool_allowlist ? JSON.parse(a.tool_allowlist) : null,
       };
     });
     sendJson(res, 200, { agents: result });
@@ -293,6 +298,8 @@ function setupRoutes(): void {
       agent_name?: string;
       agent_title?: string;
       parent_id?: string | null;
+      cross_branch_trusted?: boolean;
+      tool_allowlist?: string[] | null;
     };
     if (!body.agent_name) {
       return sendError(res, 400, 'validation_error', 'agent_name is required');
@@ -333,6 +340,10 @@ function setupRoutes(): void {
       body.agent_name,
       body.agent_title,
       body.parent_id || null,
+      {
+        cross_branch_trusted: body.cross_branch_trusted,
+        tool_allowlist: body.tool_allowlist,
+      },
     );
 
     // Create agent directory and default CLAUDE.md
@@ -360,6 +371,8 @@ function setupRoutes(): void {
       depth: agent.depth,
       status: 'idle',
       cost_today_eur: 0.0,
+      cross_branch_trusted: agent.cross_branch_trusted === 1,
+      tool_allowlist: agent.tool_allowlist ? JSON.parse(agent.tool_allowlist) : null,
     });
 
     sendJson(res, 201, {
@@ -372,6 +385,8 @@ function setupRoutes(): void {
       cost_today_eur: 0.0,
       open_hitl_cards: 0,
       last_run_ts: null,
+      cross_branch_trusted: agent.cross_branch_trusted === 1,
+      tool_allowlist: agent.tool_allowlist ? JSON.parse(agent.tool_allowlist) : null,
     });
   });
 
@@ -402,6 +417,8 @@ function setupRoutes(): void {
       budget_tokens: null, // TODO: parse from CLAUDE.md
       used_tokens_today: getDailyTokenUsage(agent.agent_id),
       budget_eur: null,
+      cross_branch_trusted: agent.cross_branch_trusted === 1,
+      tool_allowlist: agent.tool_allowlist ? JSON.parse(agent.tool_allowlist) : null,
     });
   });
 
@@ -439,19 +456,27 @@ function setupRoutes(): void {
       );
     }
 
-    // Trigger a handover run so the agent can save important info to SharedSpace
-    const conv = getOrCreateActiveConversation(params.agent_id, () =>
-      generateId('conv'),
-    );
-    const completionPromise = onceRunCompleted(params.agent_id);
-    triggerAgentRun(
-      params.agent_id,
-      conv.conversation_id,
-      '[CEO]: You are being terminated. Summarize any important private notes and write a handover document to SharedSpace so your knowledge is preserved. Be concise.',
-    );
+    // Only run a handover invocation if the agent has actually been used.
+    // A brand-new agent with no completed runs has nothing to hand over.
+    const pastRuns = getAgentRuns(params.agent_id, 1);
+    if (pastRuns.runs.length > 0) {
+      const conv = getOrCreateActiveConversation(params.agent_id, () =>
+        generateId('conv'),
+      );
+      const completionPromise = onceRunCompleted(params.agent_id);
+      triggerAgentRun(
+        params.agent_id,
+        conv.conversation_id,
+        '[CEO]: You are being terminated. Summarize any important private notes and write a handover document to SharedSpace so your knowledge is preserved. Be concise.',
+      );
 
-    // Wait for the handover run to finish, then delete
-    await completionPromise;
+      // Wait for the handover run to finish, but don't block forever
+      const HANDOVER_TIMEOUT_MS = 120_000; // 2 minutes
+      await Promise.race([
+        completionPromise,
+        new Promise<void>((resolve) => setTimeout(resolve, HANDOVER_TIMEOUT_MS)),
+      ]);
+    }
 
     const deletedIds = deleteAgentSubtree(params.agent_id);
     broadcast('agent.deleted', {
@@ -459,6 +484,68 @@ function setupRoutes(): void {
       deleted_subtree: deletedIds,
     });
     sendNoContent(res);
+  });
+
+  addRoute('PUT', '/api/v1/agents/{agent_id}', async (req, res, params) => {
+    const agent = getAgentById(params.agent_id);
+    if (!agent) {
+      return sendError(
+        res,
+        404,
+        'agent_not_found',
+        `No agent with id '${params.agent_id}'`,
+      );
+    }
+    const body = (await parseJson(req)) as {
+      agent_name?: string;
+      agent_title?: string;
+      cross_branch_trusted?: boolean;
+      tool_allowlist?: string[] | null;
+    };
+
+    // Validate tool_allowlist is an array of strings or null
+    if (
+      body.tool_allowlist !== undefined &&
+      body.tool_allowlist !== null &&
+      (!Array.isArray(body.tool_allowlist) ||
+        !body.tool_allowlist.every((t) => typeof t === 'string'))
+    ) {
+      return sendError(
+        res,
+        400,
+        'validation_error',
+        'tool_allowlist must be an array of strings or null',
+      );
+    }
+
+    updateAgentAttrs(params.agent_id, {
+      agent_name: body.agent_name,
+      agent_title: body.agent_title,
+      cross_branch_trusted: body.cross_branch_trusted,
+      tool_allowlist: body.tool_allowlist,
+    });
+
+    const updated = getAgentById(params.agent_id)!;
+    const runs = getAgentRuns(updated.agent_id, 1);
+    const lastRun = runs.runs[0];
+    sendJson(res, 200, {
+      agent_id: updated.agent_id,
+      agent_name: updated.agent_name,
+      agent_title: updated.agent_title,
+      parent_id: updated.parent_id,
+      agent_path: getAgentPath(updated.agent_id),
+      depth: updated.depth,
+      status: updated.status,
+      cost_today_eur: 0.0,
+      open_hitl_cards: countOpenHitlCardsForSubtree(updated.agent_id),
+      last_run_ts: lastRun?.started_ts || null,
+      last_run_exit_reason: lastRun?.exit_reason || null,
+      budget_tokens: null,
+      used_tokens_today: getDailyTokenUsage(updated.agent_id),
+      budget_eur: null,
+      cross_branch_trusted: updated.cross_branch_trusted === 1,
+      tool_allowlist: updated.tool_allowlist ? JSON.parse(updated.tool_allowlist) : null,
+    });
   });
 
   addRoute(
@@ -1286,7 +1373,6 @@ function setupRoutes(): void {
     sendJson(res, 200, {
       pages: pages.map((p) => ({
         page_id: p.page_id,
-        title: p.title,
         summary: p.summary,
         owner: p.owner,
         access: p.access,
@@ -1305,7 +1391,6 @@ function setupRoutes(): void {
       const page = readPage(params.page_id, requesterId);
       sendJson(res, 200, {
         page_id: page.page_id,
-        title: page.title,
         summary: page.summary,
         owner: page.owner,
         access: page.access,
@@ -1322,18 +1407,17 @@ function setupRoutes(): void {
 
   addWildcardRoute('PUT', '/api/v1/sharedspace', async (req, res, params) => {
     const body = (await parseJson(req)) as {
-      title?: string;
       summary?: string;
       owner?: string;
       access?: string | string[];
       body?: string;
     };
-    if (!body.title || body.summary === undefined || body.body === undefined) {
+    if (body.summary === undefined || body.body === undefined) {
       return sendError(
         res,
         400,
         'validation_error',
-        'title, summary, and body are required',
+        'summary and body are required',
       );
     }
 
@@ -1341,7 +1425,6 @@ function setupRoutes(): void {
       const page = writePage(
         params.page_id,
         {
-          title: body.title,
           summary: body.summary,
           body: body.body,
           owner: body.owner,
@@ -1353,7 +1436,6 @@ function setupRoutes(): void {
       // writePage emits the WS event internally
       sendJson(res, 200, {
         page_id: page.page_id,
-        title: page.title,
         summary: page.summary,
         owner: page.owner,
         access: page.access,
@@ -1449,6 +1531,19 @@ function setupRoutes(): void {
       return;
     }
 
+    // Enforce tool_allowlist: if the agent has one, reject unlisted tools
+    const callingAgent = getAgentById(agent_id);
+    if (callingAgent?.tool_allowlist) {
+      const allowed: string[] = JSON.parse(callingAgent.tool_allowlist);
+      if (!allowed.includes(tool)) {
+        sendJson(res, 200, {
+          success: false,
+          error: `Tool '${tool}' is not in your allowlist. Permitted tools: ${allowed.join(', ')}`,
+        });
+        return;
+      }
+    }
+
     try {
       let result: unknown;
       switch (tool) {
@@ -1460,10 +1555,9 @@ function setupRoutes(): void {
             agent_id,
             args.page_id as string,
             args.content as {
-              title: string;
               summary: string;
               body: string;
-              owner_agent_id?: string;
+              owner?: string;
             },
             run_id,
           );

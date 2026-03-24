@@ -488,6 +488,13 @@ function ensureContainerSystemRunning(): void {
 async function main(): Promise<void> {
   ensureContainerSystemRunning();
   initDatabase();
+  // Reset stale agent statuses from a previous process (e.g. 'active' agents
+  // whose containers are gone because the server was restarted mid-run).
+  const { resetAllAgentStatuses } = await import('./db.js');
+  const resetCount = resetAllAgentStatuses();
+  if (resetCount > 0) {
+    logger.info({ resetCount }, 'Reset stale agent statuses to idle');
+  }
   logger.info('Database initialized');
   startVaultWatcher();
   loadState();

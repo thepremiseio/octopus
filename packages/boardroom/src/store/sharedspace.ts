@@ -64,7 +64,6 @@ export function initSharedSpaceSubscriptions(): void {
     } else {
       useSharedSpaceStore.getState().upsertPageMeta({
         page_id: payload.page_id,
-        title: payload.title,
         summary: payload.summary,
         owner: payload.owner_agent_id,
         access: 'ceo-only',

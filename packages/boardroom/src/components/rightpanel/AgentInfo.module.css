@@ -112,6 +112,31 @@
   background: var(--red-bg);
 }
 
+.toggleLink {
+  cursor: pointer;
+  color: var(--accent);
+}
+
+.toggleLink:hover {
+  color: var(--accent-hover);
+}
+
+.allowlistItems {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 4px 0;
+}
+
+.allowlistTag {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-label);
+  color: var(--text-secondary);
+  background: var(--bg-surface-2);
+  padding: 1px 6px;
+  border-radius: 3px;
+}
+
 .loading {
   color: var(--text-muted);
   font-family: var(--font-mono);

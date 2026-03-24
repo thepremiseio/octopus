@@ -317,7 +317,7 @@ export function generateBoilerplate(agentId: string): string {
   bp +=
     '- **Approvals:** See SharedSpace approval policy for when approval is required.\n';
   bp +=
-    '- **Ending your invocation:** Always call `task_complete` when your work is done. If you sent a message to another agent, updated SharedSpace, or completed a task with no CEO-facing output, call `task_complete()` with no argument. Only pass a message if there is something the CEO genuinely needs to see or act on.\n';
+    '- **Ending your invocation:** Always call `task_complete` when your work is done. If you are responding to the CEO or have something the CEO needs to see, pass your response as the `message` argument — this is the **only** way text reaches the CEO. Call `task_complete()` with no argument only for purely internal work (inbox messages, SharedSpace updates) where no CEO-facing output is needed.\n';
 
   // Available Tools
   bp += '\n## Available Tools\n\n';
@@ -329,7 +329,7 @@ export function generateBoilerplate(agentId: string): string {
   bp +=
     '- `request_hitl(type, subject, context, options?, preference?)` — Request CEO input\n';
   bp +=
-    '- `task_complete(message?)` — Call when your work is complete. Pass `message` if the CEO needs to see an outcome; omit it if your work was purely internal.\n';
+    '- `task_complete(message?)` — Call when your work is complete. **If you have a response for the CEO, you MUST pass it as the `message` argument** — text you write outside of tool calls is never shown to the CEO. Omit the argument only when your work was purely internal (e.g. processing an inbox message) and the CEO does not need to see anything.\n';
 
   // SharedSpace usage guidance
   bp += '\n## SharedSpace\n\n';

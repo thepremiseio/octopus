@@ -58,7 +58,6 @@ export function PageView({ pageId }: PageViewProps) {
     <div className={styles.page}>
       <div className={styles.pagePath}>{page.page_id}</div>
       <div className={styles.meta}>
-        <span className={styles.metaTitle}>{page.title}</span>
         {page.summary && (
           <span className={styles.metaSummary}>{page.summary}</span>
         )}

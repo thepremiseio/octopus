@@ -1,6 +1,7 @@
 import type { WsEnvelope, WsEventMap, WsEventType } from '../types/api';
 
-const WS_URL = `ws://localhost:${import.meta.env.VITE_NANOCLAW_PORT}/ws`;
+const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+const WS_URL = `${protocol}//${window.location.host}/ws`;
 const EXPECTED_VERSION = 1;
 
 export type ConnectionStatus = 'connected' | 'connecting' | 'disconnected';

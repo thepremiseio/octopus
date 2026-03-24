@@ -1,8 +1,5 @@
-import { useState } from 'react';
 import { useSharedSpaceStore } from '../../store/sharedspace';
 import { useAgentsStore } from '../../store/agents';
-import { putSharedSpacePage } from '../../api/rest';
-import { PromptModal } from '../common/PromptModal';
 import styles from './PageTree.module.css';
 
 interface PageTreeProps {
@@ -13,7 +10,6 @@ export function PageTree({ onSelectPage }: PageTreeProps) {
   const pages = useSharedSpaceStore((s) => s.pages);
   const currentPage = useSharedSpaceStore((s) => s.currentPage);
   const recentlyUpdated = useSharedSpaceStore((s) => s.recentlyUpdated);
-  const [showCreate, setShowCreate] = useState(false);
 
   // Get the last segment of a page_id for display
   function shortLabel(pageId: string): string {
@@ -37,11 +33,6 @@ export function PageTree({ onSelectPage }: PageTreeProps) {
     <div className={styles.tree}>
       <div className={styles.header}>
         <span className={styles.headerLabel}>Pages</span>
-        <button
-          className={styles.addButton}
-          title="New page"
-          onClick={() => setShowCreate(true)}
-        >+</button>
       </div>
       {pages.map((page, i) => {
         const isActive = currentPage?.page_id === page.page_id;
@@ -63,31 +54,6 @@ export function PageTree({ onSelectPage }: PageTreeProps) {
           </div>
         );
       })}
-
-      {showCreate && (
-        <PromptModal
-          title="Create SharedSpace page"
-          fields={[
-            { key: 'pageId', label: 'Page ID', placeholder: 'work/my-page', defaultValue: currentPage ? currentPage.page_id + '/' : '' },
-            { key: 'title', label: 'Title', placeholder: 'My Page' },
-          ]}
-          submitLabel="Create"
-          onSubmit={(values) => {
-            const pageId = values.pageId?.trim();
-            const title = values.title?.trim();
-            if (!pageId || !title) return;
-            const owner = useAgentsStore.getState().selectedAgentId ?? 'ceo';
-            void putSharedSpacePage(pageId, {
-              title,
-              summary: '',
-              owner: owner,
-              body: '',
-            }).then(() => onSelectPage(pageId));
-            setShowCreate(false);
-          }}
-          onCancel={() => setShowCreate(false)}
-        />
-      )}
     </div>
   );
 }

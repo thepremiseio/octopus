@@ -19,6 +19,8 @@ import type {
   GetSharedSpacePageResponse,
   PostAgentRequest,
   PostAgentResponse,
+  PutAgentRequest,
+  PutAgentResponse,
   PostBudgetResetResponse,
   PostConversationResponse,
   PostHitlDecisionRequest,
@@ -33,7 +35,7 @@ import type {
   PutSharedSpacePageResponse,
 } from '../types/api';
 
-const API_URL = `http://localhost:${import.meta.env.VITE_NANOCLAW_PORT}/api/v1`;
+const API_URL = `${window.location.protocol}//${window.location.host}/api/v1`;
 
 export class ApiError extends Error {
   constructor(
@@ -82,6 +84,10 @@ export function createAgent(body: PostAgentRequest): Promise<PostAgentResponse> 
 
 export function getAgent(agentId: string): Promise<GetAgentResponse> {
   return request(`/agents/${agentId}`);
+}
+
+export function updateAgent(agentId: string, body: PutAgentRequest): Promise<PutAgentResponse> {
+  return request(`/agents/${agentId}`, { method: 'PUT', ...json(body) });
 }
 
 export function deleteAgent(agentId: string): Promise<void> {

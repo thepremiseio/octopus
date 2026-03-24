@@ -35,7 +35,6 @@ export type AccessLevel =
 
 export interface VaultPage {
   page_id: string;
-  title: string;
   owner: string;
   access: AccessLevel;
   summary: string;
@@ -46,6 +45,15 @@ export interface VaultPage {
 
 // Index-only variant (no body)
 export type VaultPageMeta = Omit<VaultPage, 'body'>;
+
+/**
+ * Derive a display name from a page_id (last path segment).
+ * e.g. "policies/hitl" → "hitl", "overview" → "overview"
+ */
+export function pageDisplayName(pageId: string): string {
+  const lastSlash = pageId.lastIndexOf('/');
+  return lastSlash >= 0 ? pageId.slice(lastSlash + 1) : pageId;
+}
 
 // --- Error types ---
 
@@ -202,7 +210,6 @@ export function readPageFromDisk(filePath: string): VaultPage | null {
 
   return {
     page_id: pageId,
-    title: String(meta.title || ''),
     owner: String(meta.owner || 'ceo'),
     access: parseAccess(meta.access),
     summary: String(meta.summary || ''),
@@ -217,7 +224,6 @@ export function readPageFromDisk(filePath: string): VaultPage | null {
  */
 function serializePage(page: VaultPage): string {
   const frontmatter: Record<string, unknown> = {
-    title: page.title,
     owner: page.owner,
     access: page.access,
     summary: page.summary,
@@ -254,7 +260,6 @@ export function readPage(
 export function writePage(
   pageId: string,
   content: {
-    title?: string;
     summary?: string;
     body?: string;
     access?: AccessLevel;
@@ -271,24 +276,6 @@ export function writePage(
     if (!content.owner) {
       throw new ParentNotFoundError('owner is required when creating a page');
     }
-
-    // Parent directory must exist on disk
-    const parentDir = path.dirname(filePath);
-    if (!fs.existsSync(parentDir)) {
-      // Check if parent page exists (for nested pages)
-      const parentPageId = pageId.includes('/')
-        ? pageId.slice(0, pageId.lastIndexOf('/'))
-        : null;
-      if (parentPageId) {
-        const parentFile = pathFromPageId(VAULT_PATH, parentPageId);
-        if (!fs.existsSync(parentFile)) {
-          throw new ParentNotFoundError(
-            `Parent page '${parentPageId}' does not exist`,
-          );
-        }
-      }
-      fs.mkdirSync(parentDir, { recursive: true });
-    }
   } else {
     // Check write access on update
     if (!canWrite(requesterId, existing)) {
@@ -301,7 +288,6 @@ export function writePage(
   const now = new Date().toISOString();
   const page: VaultPage = {
     page_id: pageId,
-    title: content.title ?? existing?.title ?? '',
     owner: isCreate ? content.owner! : existing!.owner,
     access: content.access ?? existing?.access ?? 'ceo-only',
     summary: content.summary ?? existing?.summary ?? '',
@@ -319,7 +305,6 @@ export function writePage(
   // Update index
   upsertSharedspaceIndex({
     page_id: page.page_id,
-    title: page.title,
     owner: page.owner,
     access: page.access,
     summary: page.summary,
@@ -331,16 +316,12 @@ export function writePage(
   invalidateAllAgentIndices();
 
   // Emit WS event
-  const lastSlash = pageId.lastIndexOf('/');
   broadcast('sharedspace.page.updated', {
     page_id: pageId,
-    title: page.title,
     summary: page.summary,
     owner_agent_id: page.owner,
     updated_by_agent_id: requesterId,
     operation: isCreate ? 'created' : 'updated',
-    parent_id: lastSlash > 0 ? pageId.slice(0, lastSlash) : null,
-    depth: pageId.split('/').length - 1,
   });
 
   return page;
@@ -385,7 +366,6 @@ export function deletePage(pageId: string, requesterId: string | 'ceo'): void {
   // Emit WS event
   broadcast('sharedspace.page.updated', {
     page_id: pageId,
-    title: page.title,
     summary: page.summary,
     owner_agent_id: page.owner,
     updated_by_agent_id: requesterId,
@@ -409,7 +389,6 @@ export function listPages(
     })
     .map((meta) => ({
       page_id: meta.page_id,
-      title: meta.title,
       owner: meta.owner,
       access: parseAccess(meta.access),
       summary: meta.summary,
@@ -446,7 +425,7 @@ export function buildAgentContextIndex(agentId: string): string {
   if (visible.length === 0) return '';
 
   const lines = visible.map(
-    (p) => `- **${p.title}** (${p.page_id}): ${p.summary}`,
+    (p) => `- **${pageDisplayName(p.page_id)}** (${p.page_id}): ${p.summary}`,
   );
   return lines.join('\n');
 }

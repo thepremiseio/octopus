@@ -146,6 +146,8 @@ export function initAgentsSubscriptions(): void {
       open_hitl_cards: 0,
       last_run_ts: null,
       last_run_exit_reason: null,
+      cross_branch_trusted: payload.cross_branch_trusted,
+      tool_allowlist: payload.tool_allowlist,
     });
   });
 
