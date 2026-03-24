@@ -3,3 +3,8 @@ dist/
 .DS_Store
 *.tsbuildinfo
 spec/
+.env
+.env.local
+
+# Local deployment config — contains secrets, never commit
+deploy/Caddyfile

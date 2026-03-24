@@ -1,0 +1,29 @@
+:root {
+  --bg: #0f0f0f;
+  --surface-1: #161616;
+  --surface-2: #1e1e1e;
+  --surface-3: #252525;
+  --border: #2a2a2a;
+
+  --text-primary: #e8e8e8;
+  --text-secondary: #888;
+  --text-tertiary: #555;
+
+  --accent: #8b5cf6;
+  --accent-dim: rgba(139, 92, 246, 0.15);
+  --green: #22c55e;
+  --green-dim: rgba(34, 197, 94, 0.15);
+  --blue: #3b82f6;
+  --red: #ef4444;
+  --amber: #f59e0b;
+
+  --radius: 12px;
+  --radius-sm: 8px;
+  --radius-full: 9999px;
+
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'SF Mono', 'Cascadia Code', 'Fira Code', monospace;
+}

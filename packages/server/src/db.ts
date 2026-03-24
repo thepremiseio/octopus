@@ -328,6 +328,16 @@ function createSchema(database: Database.Database): void {
     /* column already exists */
   }
 
+  // Push notification subscriptions (for mobile PWA)
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS push_subscriptions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      endpoint TEXT NOT NULL UNIQUE,
+      keys_p256dh TEXT NOT NULL,
+      keys_auth TEXT NOT NULL,
+      created_ts INTEGER NOT NULL
+    );
+  `);
 }
 
 export function initDatabase(): void {
@@ -1761,3 +1771,33 @@ function migrateJsonState(): void {
   }
 }
 
+// ─── Push subscriptions ──────────────────────────────────────────────────────
+
+export interface PushSubscriptionRow {
+  id: number;
+  endpoint: string;
+  keys_p256dh: string;
+  keys_auth: string;
+  created_ts: number;
+}
+
+export function insertPushSubscription(
+  endpoint: string,
+  p256dh: string,
+  auth: string,
+): void {
+  db.prepare(
+    `INSERT OR REPLACE INTO push_subscriptions (endpoint, keys_p256dh, keys_auth, created_ts)
+     VALUES (?, ?, ?, ?)`,
+  ).run(endpoint, p256dh, auth, Date.now());
+}
+
+export function deletePushSubscription(endpoint: string): void {
+  db.prepare(`DELETE FROM push_subscriptions WHERE endpoint = ?`).run(endpoint);
+}
+
+export function getAllPushSubscriptions(): PushSubscriptionRow[] {
+  return db
+    .prepare(`SELECT * FROM push_subscriptions`)
+    .all() as PushSubscriptionRow[];
+}

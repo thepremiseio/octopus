@@ -41,6 +41,8 @@ import {
   resolveHitlCard,
   updateAgentStatus,
   updateCrossBranchMessageStatus,
+  insertPushSubscription,
+  deletePushSubscription,
   type AgentRow,
   type HitlCardRow,
 } from '../db.js';
@@ -65,6 +67,11 @@ import {
   PageHasChildrenError,
 } from '../sharedspace.js';
 import { logger } from '../logger.js';
+import {
+  initWebPush,
+  getVapidPublicKey,
+  sendPushNotification,
+} from '../web-push.js';
 import {
   sharedspaceRead,
   sharedspaceWrite,
@@ -114,6 +121,19 @@ function wsBroadcast(event: OctopusEvent): void {
   const data = JSON.stringify(event);
   for (const client of clients) {
     wsSend(client, data);
+  }
+
+  // Send push notification for chat messages
+  if (event.type === 'chat.message.received') {
+    const payload = event.payload as {
+      agent_id: string;
+      content: string;
+    };
+    const agent = getAgentById(payload.agent_id);
+    const agentName = agent?.agent_name ?? payload.agent_id;
+    sendPushNotification(payload.agent_id, agentName, payload.content).catch(
+      (err) => logger.warn({ err }, 'Push notification error'),
+    );
   }
 }
 
@@ -1515,6 +1535,35 @@ function setupRoutes(): void {
     });
   });
 
+  // --- Push notifications ---
+
+  addRoute('GET', '/api/v1/push/vapid-key', async (_req, res) => {
+    sendJson(res, 200, { publicKey: getVapidPublicKey() });
+  });
+
+  addRoute('POST', '/api/v1/push/subscribe', async (req, res) => {
+    const body = (await parseJson(req)) as {
+      endpoint?: string;
+      keys?: { p256dh?: string; auth?: string };
+    };
+    if (!body.endpoint || !body.keys?.p256dh || !body.keys?.auth) {
+      sendError(res, 400, 'validation_error', 'Missing endpoint or keys');
+      return;
+    }
+    insertPushSubscription(body.endpoint, body.keys.p256dh, body.keys.auth);
+    sendJson(res, 201, { ok: true });
+  });
+
+  addRoute('POST', '/api/v1/push/unsubscribe', async (req, res) => {
+    const body = (await parseJson(req)) as { endpoint?: string };
+    if (!body.endpoint) {
+      sendError(res, 400, 'validation_error', 'Missing endpoint');
+      return;
+    }
+    deletePushSubscription(body.endpoint);
+    sendNoContent(res);
+  });
+
   // --- Internal: tool calls from agent containers ---
 
   addRoute('POST', '/api/v1/internal/tool-call', async (req, res) => {
@@ -1649,6 +1698,8 @@ function getValidResolutions(cardType: string): string[] {
 let server: http.Server | null = null;
 
 export function startDashboardServer(port: number): http.Server {
+  // Initialize web push (generates VAPID keys on first run)
+  initWebPush();
   setupRoutes();
 
   // Wire up broadcast

@@ -1,0 +1,223 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  padding-top: calc(10px + var(--safe-top));
+  background: var(--surface-1);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.backBtn {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-full);
+  color: var(--text-primary);
+  flex-shrink: 0;
+}
+
+.backBtn:active {
+  background: var(--surface-3);
+}
+
+.headerInfo {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.headerName {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.headerStatus {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.headerStatusActive {
+  color: var(--green);
+}
+
+/* ─── Message thread ────────────────────────────────────────────────────── */
+
+.thread {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 12px 12px 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.loadingMsg {
+  text-align: center;
+  color: var(--text-secondary);
+  padding: 24px;
+}
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  gap: 4px;
+  padding: 24px;
+}
+
+.emptyTitle {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.emptySubtitle {
+  font-size: 14px;
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+/* ─── Bubbles ───────────────────────────────────────────────────────────── */
+
+.bubble {
+  max-width: 82%;
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  position: relative;
+  word-wrap: break-word;
+  white-space: pre-wrap;
+}
+
+.bubbleCeo {
+  align-self: flex-end;
+  background: var(--accent);
+  color: #fff;
+  border-bottom-right-radius: 4px;
+}
+
+.bubbleAgent {
+  align-self: flex-start;
+  background: var(--surface-2);
+  color: var(--text-primary);
+  border-bottom-left-radius: 4px;
+}
+
+.bubbleContent {
+  font-size: 15px;
+  line-height: 1.4;
+}
+
+.bubbleTime {
+  display: block;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+  text-align: right;
+  margin-top: 2px;
+}
+
+.bubbleAgent .bubbleTime {
+  color: var(--text-tertiary);
+}
+
+/* ─── Typing indicator ──────────────────────────────────────────────────── */
+
+.typing {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 12px 16px;
+}
+
+.typingDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-secondary);
+  animation: typingBounce 1.4s ease-in-out infinite;
+}
+
+.typingDot:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.typingDot:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes typingBounce {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+  30% { transform: translateY(-4px); opacity: 1; }
+}
+
+/* ─── Input bar ─────────────────────────────────────────────────────────── */
+
+.inputBar {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 8px 12px;
+  padding-bottom: calc(8px + var(--safe-bottom));
+  background: var(--surface-1);
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.input {
+  flex: 1;
+  min-height: 40px;
+  max-height: 120px;
+  padding: 10px 14px;
+  background: var(--surface-3);
+  border-radius: 20px;
+  font-size: 16px;
+  line-height: 1.3;
+  color: var(--text-primary);
+  resize: none;
+  overflow-y: auto;
+}
+
+.input::placeholder {
+  color: var(--text-tertiary);
+}
+
+.input:disabled {
+  opacity: 0.5;
+}
+
+.sendBtn {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-full);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+  transition: color 0.15s, background 0.15s;
+}
+
+.sendBtnActive {
+  color: #fff;
+  background: var(--accent);
+}
+
+.sendBtn:disabled {
+  opacity: 0.5;
+}

@@ -1,0 +1,31 @@
+# Octopus — Caddyfile
+#
+# Copy this file to deploy/Caddyfile and fill in your values.
+# Generate a password hash with: caddy hash-password
+#
+# Caddy must be installed on your machine: https://caddyserver.com/docs/install
+
+:7777 {
+    basicauth {
+        # YOUR_USERNAME <bcrypt-hash>
+        # Example: john $2a$14$Zkx19XLiW6VYouLHR5NmfOFU0z2GTNmpkT/5qqR7hx4IjWJPDhjvG
+    }
+
+    # Boardroom static files / dev server
+    handle /* {
+        reverse_proxy localhost:5173
+    }
+
+    # REST API
+    handle /api/* {
+        reverse_proxy localhost:3000
+    }
+
+    # WebSocket
+    handle /ws {
+        reverse_proxy localhost:3000 {
+            header_up Upgrade {http.upgrade}
+            header_up Connection "Upgrade"
+        }
+    }
+}
