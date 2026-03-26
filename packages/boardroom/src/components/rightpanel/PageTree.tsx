@@ -18,6 +18,11 @@ export function PageTree({ onSelectPage }: PageTreeProps) {
     return agent?.agent_name ?? agentId;
   }
 
+  function accessLabel(access: string | string[]): string {
+    if (Array.isArray(access)) return access.join(', ');
+    return access;
+  }
+
   // Build folder structure: track which folders we've already rendered
   const renderedFolders = new Set<string>();
 
@@ -61,6 +66,7 @@ export function PageTree({ onSelectPage }: PageTreeProps) {
               onClick={() => onSelectPage(page.page_id)}
             >
               <span className={styles.pageLabel}>{leafName}</span>
+              <span className={styles.pageAccess}>{accessLabel(page.access)}</span>
               <span className={styles.pageOwner}>{ownerName(page.owner)}</span>
               {isRecent && <span className={styles.recentDot}>&bull;</span>}
             </div>

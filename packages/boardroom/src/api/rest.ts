@@ -223,3 +223,9 @@ export function getCost(period?: CostPeriod): Promise<GetCostResponse> {
   const qs = period ? `?period=${period}` : '';
   return request(`/cost${qs}`);
 }
+
+// ─── Server ──────────────────────────────────────────────────────────────────
+
+export function restartServer(): Promise<void> {
+  return request('/restart', { method: 'POST' });
+}

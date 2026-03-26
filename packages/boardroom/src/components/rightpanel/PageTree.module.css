@@ -64,6 +64,13 @@
   white-space: nowrap;
 }
 
+.pageAccess {
+  font-size: var(--font-size-label);
+  color: var(--text-muted);
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
 .pageOwner {
   font-size: var(--font-size-label);
   color: var(--text-muted);

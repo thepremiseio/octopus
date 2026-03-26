@@ -66,7 +66,7 @@ export function initSharedSpaceSubscriptions(): void {
         page_id: payload.page_id,
         summary: payload.summary,
         owner: payload.owner_agent_id,
-        access: 'ceo-only',
+        access: payload.access,
         updated: new Date().toISOString(),
       });
     }

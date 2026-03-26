@@ -193,18 +193,28 @@ export function sharedspaceWrite(
   );
 
   try {
+    // Check if page exists before write to determine operation
+    let isCreate: boolean;
+    try {
+      readPage(pageId, 'ceo');
+      isCreate = false;
+    } catch {
+      isCreate = true;
+    }
+
     const page = writePage(
       pageId,
       {
         summary: content.summary,
         body: content.body,
-        owner: content.owner || agentId,
+        owner: content.owner || getAgentById(agentId)?.agent_name || agentId,
         access: content.access as import('./sharedspace.js').AccessLevel,
       },
       agentId,
     );
 
-    const outcome = 'Page saved';
+    const operation = isCreate ? 'created' : 'updated';
+    const outcome = `Page ${operation}`;
     recordToolResult(
       agentId,
       runId,
@@ -216,7 +226,7 @@ export function sharedspaceWrite(
     checkCircuitBreaker(agentId, runId);
     return {
       success: true,
-      data: { page_id: page.page_id, owner: page.owner },
+      data: { page_id: page.page_id, owner: page.owner, operation },
     };
   } catch (err) {
     const msg =
@@ -330,7 +340,10 @@ export function sendMessage(
     senderBranch.agent_id === recipientBranch.agent_id;
 
   // cross_branch_trusted agents bypass the CEO queue for cross-branch messages
-  const isTrusted = sender.cross_branch_trusted === 1;
+  // (either the sender OR the recipient being trusted is sufficient)
+  const isTrusted =
+    sender.cross_branch_trusted === 1 ||
+    recipient.cross_branch_trusted === 1;
 
   const messageId = generateId('msg');
 

@@ -155,6 +155,7 @@ function handleAddOrChange(filePath: string): void {
           owner_agent_id: page?.owner || 'ceo',
           updated_by_agent_id: 'filesystem',
           operation: 'updated',
+          access: page?.access || 'ceo-only',
         });
       }
     }, DEBOUNCE_MS),
@@ -183,6 +184,7 @@ function handleUnlink(filePath: string): void {
         owner_agent_id: 'unknown',
         updated_by_agent_id: 'filesystem',
         operation: 'deleted',
+        access: 'ceo-only',
       });
     }, DEBOUNCE_MS),
   );

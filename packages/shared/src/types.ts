@@ -346,6 +346,7 @@ export interface SharedSpacePageUpdatedPayload {
   owner_agent_id: string;
   updated_by_agent_id: string;
   operation: SharedSpaceOperation;
+  access: string | string[];
 }
 
 export interface InboxMessageDeliveredPayload {

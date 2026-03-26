@@ -115,7 +115,7 @@ export function App() {
 
   return (
     <div className={styles.app}>
-      <Topbar connectionStatus={connectionStatus} onOpenCostOverview={handleOpenCostOverview} />
+      <Topbar connectionStatus={connectionStatus} />
       <div className={styles.body}>
         <AgentTree onOpenCostOverview={handleOpenCostOverview} onSelectAgent={handleSelectAgent} />
         <PrimaryPanel mode={mode} onSetMode={setMode}>

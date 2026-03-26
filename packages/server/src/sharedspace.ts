@@ -114,6 +114,15 @@ export function pathFromPageId(vaultRoot: string, pageId: string): string {
 // --- Access control ---
 
 /**
+ * Resolve a page owner (which may be a name or an agent_id) to an agent_id.
+ * Returns the original string if resolution fails.
+ */
+function resolveOwnerId(owner: string): string {
+  const agent = resolveAgent(owner);
+  return agent ? agent.agent_id : owner;
+}
+
+/**
  * Parse the access field from frontmatter into a typed AccessLevel.
  */
 function parseAccess(raw: unknown): AccessLevel {
@@ -138,7 +147,10 @@ function parseAccess(raw: unknown): AccessLevel {
       // Not valid JSON — try bracket-notation comma-separated list
       const match = s.match(/^\[(.+)\]$/);
       if (match) {
-        return match[1]!.split(',').map((v) => v.trim()).filter(Boolean);
+        return match[1]!
+          .split(',')
+          .map((v) => v.trim())
+          .filter(Boolean);
       }
     }
   }
@@ -155,8 +167,10 @@ export function canRead(
 ): boolean {
   if (agentId === 'ceo') return true;
 
+  const ownerId = resolveOwnerId(page.owner);
+
   // Owner can always read their own pages
-  if (page.owner === agentId) return true;
+  if (ownerId === agentId) return true;
 
   const access = page.access;
 
@@ -166,16 +180,16 @@ export function canRead(
 
   if (access === 'owner-and-above') {
     // Walk the parent chain from the owner up to CEO
-    const ownerAgent = getAgentById(page.owner);
+    const ownerAgent = getAgentById(ownerId);
     if (!ownerAgent) return false;
 
-    const chain = getAncestryChain(page.owner);
+    const chain = getAncestryChain(ownerId);
     return chain.some((a) => a.agent_id === agentId);
   }
 
   if (access === 'branch') {
     // All agents in the same top-level branch as the owner
-    const ownerBranch = getTopLevelBranch(page.owner);
+    const ownerBranch = getTopLevelBranch(ownerId);
     const readerBranch = getTopLevelBranch(agentId);
     if (!ownerBranch || !readerBranch) return false;
     return ownerBranch.agent_id === readerBranch.agent_id;
@@ -201,7 +215,7 @@ export function canWrite(
   page: { owner: string },
 ): boolean {
   if (agentId === 'ceo') return true;
-  return page.owner === agentId;
+  return resolveOwnerId(page.owner) === agentId;
 }
 
 // --- Vault file operations ---
@@ -330,6 +344,7 @@ export function writePage(
     owner_agent_id: page.owner,
     updated_by_agent_id: requesterId,
     operation: isCreate ? 'created' : 'updated',
+    access: page.access,
   });
 
   return page;
@@ -378,6 +393,7 @@ export function deletePage(pageId: string, requesterId: string | 'ceo'): void {
     owner_agent_id: page.owner,
     updated_by_agent_id: requesterId,
     operation: 'deleted',
+    access: page.access,
   });
 }
 

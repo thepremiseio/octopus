@@ -46,7 +46,7 @@ src/
 │   └── useKeyboard.ts                # Global keyboard shortcuts + command palette trigger
 ├── components/
 │   ├── layout/
-│   │   ├── Topbar.tsx                # Connection status, keyboard hints, total cost
+│   │   ├── Topbar.tsx                # Connection status, keyboard hints, server restart button
 │   │   ├── AgentTree.tsx             # Left sidebar — depth-indented agent hierarchy
 │   │   ├── PrimaryPanel.tsx          # Centre — switches between queue/chat/sharedspace/cost
 │   │   ├── RightPanel.tsx            # Right — context-aware (agent info / activity / page tree)
@@ -67,7 +67,7 @@ src/
 │   ├── rightpanel/
 │   │   ├── AgentInfo.tsx             # Status, budget, schedules, action buttons
 │   │   ├── ActivityFeed.tsx          # Live run activity stream, colour-coded by tool category
-│   │   └── PageTree.tsx              # SharedSpace page hierarchy with update indicators
+│   │   └── PageTree.tsx              # SharedSpace page hierarchy with access labels and update indicators
 │   └── common/
 │       ├── CommandPalette.tsx         # Ctrl-K fuzzy command search
 │       ├── StatusDot.tsx              # Coloured dot per agent status

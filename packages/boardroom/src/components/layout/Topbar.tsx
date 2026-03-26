@@ -1,21 +1,24 @@
-import { useCostStore } from '../../store/cost';
+import { restartServer } from '../../api/rest';
 import type { ConnectionStatus } from '../../api/websocket';
 import styles from './Topbar.module.css';
 
 interface TopbarProps {
   connectionStatus: ConnectionStatus;
-  onOpenCostOverview: () => void;
 }
 
-export function Topbar({ connectionStatus, onOpenCostOverview }: TopbarProps) {
-  const totalTokensToday = useCostStore((s) => s.totalTokensToday);
-
+export function Topbar({ connectionStatus }: TopbarProps) {
   const dotClass =
     connectionStatus === 'connected'
       ? styles.connected
       : connectionStatus === 'connecting'
         ? styles.connecting
         : styles.disconnected;
+
+  const handleRestart = () => {
+    restartServer().catch(() => {
+      // Server is shutting down — connection will drop and auto-reconnect
+    });
+  };
 
   return (
     <header className={styles.topbar}>
@@ -26,8 +29,8 @@ export function Topbar({ connectionStatus, onOpenCostOverview }: TopbarProps) {
       <div className={styles.center}>
         Ctrl-K command palette &middot; Esc queue &middot; 1&ndash;9 choice &middot; A approve &middot; R reject
       </div>
-      <button className={styles.costButton} onClick={onOpenCostOverview}>
-        {totalTokensToday.toLocaleString()} tokens today
+      <button className={styles.restartButton} onClick={handleRestart}>
+        Restart server
       </button>
     </header>
   );

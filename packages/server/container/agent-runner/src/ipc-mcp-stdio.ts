@@ -403,17 +403,18 @@ if (isOctopus) {
 
   server.tool(
     'sharedspace_write',
-    'Create or update a SharedSpace page. Provide the page ID and content (title, summary, body).',
+    'Create or update a SharedSpace page. You can set who can read the page via the `access` parameter.\n\nAccess levels:\n- "ceo-only" (default) — only the CEO can read\n- "owner-and-above" — you + your management chain up to CEO\n- "branch" — all agents in your top-level branch\n- "everyone" — all agents\n- JSON array of agent names/IDs — only those specific agents (e.g. ["Laura", "Arthur"])\n\nWrite access is always restricted to the page owner and CEO. You can change access on pages you own at any time by calling sharedspace_write with the new access value.',
     {
       page_id: z.string().describe('The page ID (e.g. "work/ventures/startup-a")'),
       title: z.string().describe('Page title'),
       summary: z.string().describe('Brief one-line summary'),
       body: z.string().describe('Full page content (markdown)'),
+      access: z.string().optional().describe('Read access level. Defaults to "ceo-only". Options: "ceo-only", "owner-and-above", "branch", "everyone", or a JSON array of agent names (e.g. "[Laura, Arthur]").'),
     },
     async (args) => {
       const result = await callHostTool('sharedspace_write', {
         page_id: args.page_id,
-        content: { title: args.title, summary: args.summary, body: args.body },
+        content: { title: args.title, summary: args.summary, body: args.body, access: args.access },
       });
       if (result.error) {
         return { content: [{ type: 'text' as const, text: `Error: ${result.error}` }], isError: true };

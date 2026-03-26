@@ -1,0 +1,86 @@
+Octopus — Dependency Overview
+==============================
+
+=== ROOT (workspace) ===
+
+  Dev:
+  - husky                          Git hooks manager
+
+
+=== @octopus/server (backend — agent runner, REST + WebSocket API) ===
+
+  Runtime:
+  - better-sqlite3                 SQLite database driver (native bindings)
+  - chokidar                       Filesystem watcher (vault sync)
+  - cron-parser                    Cron expression parsing (scheduled tasks)
+  - gray-matter                    YAML frontmatter parser (SharedSpace pages)
+  - pino                           Structured JSON logger
+  - pino-pretty                    Human-readable log formatter
+  - web-push                       Web Push / VAPID notifications (mobile PWA)
+  - ws                             WebSocket server
+  - yaml                           YAML parser/serialiser
+  - zod                            Schema validation (tool input validation)
+
+  Dev:
+  - @types/better-sqlite3          Type definitions for better-sqlite3
+  - @types/node                    Type definitions for Node.js
+  - @types/web-push                Type definitions for web-push
+  - @types/ws                      Type definitions for ws
+  - @vitest/coverage-v8            Code coverage via V8
+  - prettier                       Code formatter
+  - tsx                            TypeScript runner (dev mode, setup scripts)
+  - typescript                     TypeScript compiler
+  - vitest                         Test runner
+
+
+=== @octopus/boardroom (frontend — CEO control centre) ===
+
+  Runtime:
+  - @fontsource/ibm-plex-mono      IBM Plex Mono font
+  - @fontsource/ibm-plex-sans      IBM Plex Sans font
+  - marked                         Markdown-to-HTML renderer
+  - react                          UI library
+  - react-dom                      React DOM renderer
+  - zustand                        State management
+
+  Dev:
+  - @types/react                   Type definitions for React
+  - @types/react-dom               Type definitions for React DOM
+  - @vitejs/plugin-react           Vite plugin for React (JSX, fast refresh)
+  - typescript                     TypeScript compiler
+  - vite                           Bundler and dev server
+
+
+=== @octopus/mobile (PWA — agent chat on mobile) ===
+
+  Runtime:
+  - @octopus/shared                Shared types and API clients (workspace dep)
+  - react                          UI library
+  - react-dom                      React DOM renderer
+  - zustand                        State management
+
+  Dev:
+  - @types/react                   Type definitions for React
+  - @types/react-dom               Type definitions for React DOM
+  - @vitejs/plugin-react           Vite plugin for React (JSX, fast refresh)
+  - typescript                     TypeScript compiler
+  - vite                           Bundler and dev server
+  - vite-plugin-pwa                PWA support (service worker, manifest)
+
+
+=== @octopus/shared (shared types + API clients) ===
+
+  (no dependencies — pure TypeScript source consumed directly by other packages)
+
+
+=== nanoclaw-agent-runner (runs inside agent containers) ===
+
+  Runtime:
+  - @anthropic-ai/claude-agent-sdk Claude Agent SDK (spawns Claude inside container)
+  - @modelcontextprotocol/sdk      MCP server SDK (exposes tools to Claude)
+  - cron-parser                    Cron expression parsing
+  - zod                            Schema validation (MCP tool parameters)
+
+  Dev:
+  - @types/node                    Type definitions for Node.js
+  - typescript                     TypeScript compiler

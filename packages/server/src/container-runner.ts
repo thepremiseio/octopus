@@ -15,6 +15,7 @@ import {
   GROUPS_DIR,
   IDLE_TIMEOUT,
   NANOCLAW_PORT,
+  RUN_TOKEN_BUDGET,
   TIMEZONE,
 } from './config.js';
 import { resolveGroupFolderPath, resolveGroupIpcPath } from './group-folder.js';
@@ -238,6 +239,112 @@ export function checkCircuitBreaker(agentId: string, runId: string): boolean {
   return false;
 }
 
+// --- Octopus: Per-run token budget ---
+
+// Tracks accumulated tokens per run and the container name for killing
+const runTokens = new Map<string, number>();
+const runContainers = new Map<string, string>(); // runId → containerName
+const runAgents = new Map<string, string>(); // runId → agentId
+
+export function registerRunContainer(
+  runId: string,
+  agentId: string,
+  containerName: string,
+): void {
+  runTokens.set(runId, 0);
+  runContainers.set(runId, containerName);
+  runAgents.set(runId, agentId);
+}
+
+export function clearRunContainer(runId: string): void {
+  runTokens.delete(runId);
+  runContainers.delete(runId);
+  runAgents.delete(runId);
+}
+
+/**
+ * Add tokens to a run's accumulator. If the run exceeds RUN_TOKEN_BUDGET,
+ * kill the container and create a HITL card. Returns true if the run was killed.
+ */
+export function addRunTokensAndCheck(
+  runId: string,
+  tokens: number,
+): boolean {
+  if (RUN_TOKEN_BUDGET <= 0) return false; // no limit configured
+
+  const current = (runTokens.get(runId) || 0) + tokens;
+  runTokens.set(runId, current);
+
+  if (current < RUN_TOKEN_BUDGET) return false;
+
+  const containerName = runContainers.get(runId);
+  const agentId = runAgents.get(runId);
+  if (!containerName || !agentId) return false;
+
+  // Prevent double-kill
+  runContainers.delete(runId);
+
+  const agent = getAgentById(agentId);
+  logger.warn(
+    { agentId, runId, tokens: current, budget: RUN_TOKEN_BUDGET },
+    'Run token budget exceeded — killing container',
+  );
+
+  // Kill the container
+  exec(stopContainer(containerName), { timeout: 15000 }, (err) => {
+    if (err) {
+      logger.warn(
+        { containerName, err },
+        'Graceful stop failed after token budget exceeded, force-killing',
+      );
+    }
+  });
+
+  // Update agent status
+  updateAgentStatus(agentId, 'circuit-breaker');
+  broadcast('agent.budget.circuit_breaker', {
+    agent_id: agentId,
+    run_id: runId,
+    tokens_used: current,
+    budget: RUN_TOKEN_BUDGET,
+    reason: 'run_token_budget',
+  });
+
+  // Create HITL card
+  const cardId = generateId('card');
+  const subject = `Token budget exceeded: ${current.toLocaleString()} tokens (limit: ${RUN_TOKEN_BUDGET.toLocaleString()})`;
+  const context = `Agent '${agent?.agent_name || agentId}' used ${current.toLocaleString()} tokens in a single run, exceeding the per-run budget of ${RUN_TOKEN_BUDGET.toLocaleString()}. The container was terminated. The agent has been paused.`;
+
+  insertHitlCard({
+    card_id: cardId,
+    card_type: 'circuit_breaker',
+    agent_id: agentId,
+    subject,
+    context,
+    options: null,
+    preference: null,
+    run_id: runId,
+    message_array: null,
+    created_ts: Date.now(),
+  });
+
+  broadcast('hitl.card.created', {
+    card_id: cardId,
+    card_type: 'circuit_breaker',
+    agent_id: agentId,
+    agent_name: agent?.agent_name || agentId,
+    agent_title: agent?.agent_title || '',
+    agent_path: getAgentPath(agentId),
+    subject,
+    context,
+    options: null,
+    preference: null,
+    run_id: runId,
+  });
+
+  return true;
+}
+
 // --- Octopus: task_complete state tracking ---
 
 // Tracks runs where task_complete was called.
@@ -339,7 +446,7 @@ export function generateBoilerplate(agentId: string): string {
   bp += '\n## Instructions\n\n';
   bp +=
     '- **Escalation:** If you hit a decision you cannot make alone, escalate to your manager.\n';
-  bp += '- **Inbox:** Process unread inbox messages before your main task.\n';
+  bp += '- **Inbox:** Process unread inbox messages before your main task. Do not send the CEO a message to confirm you have processed an inter-agent message unless it contains something that requires CEO input or action. Silent processing is the default.\n';
   bp +=
     '- **Approvals:** See SharedSpace approval policy for when approval is required.\n';
   bp +=
@@ -348,7 +455,7 @@ export function generateBoilerplate(agentId: string): string {
   // Available Tools
   bp += '\n## Available Tools\n\n';
   bp += '- `sharedspace_read(id)` — Read a SharedSpace page\n';
-  bp += '- `sharedspace_write(id, content)` — Write a SharedSpace page\n';
+  bp += '- `sharedspace_write(id, content, access?)` — Write a SharedSpace page (optionally set read access)\n';
   bp += '- `sharedspace_list(prefix?)` — List SharedSpace pages\n';
   bp +=
     '- `send_message(to, subject, body)` — Send a message to another agent\n';
@@ -388,6 +495,17 @@ export function generateBoilerplate(agentId: string): string {
     '- Recommendations waiting for a decision — those belong in a choice or approval card, not a page\n';
   bp +=
     '- Summaries of conversations you just had — that is private storage territory\n\n';
+
+  bp += '**Access control:**\n';
+  bp += '- Every page has a read access level, set via the `access` parameter on `sharedspace_write`:\n';
+  bp += '  - `ceo-only` (default) — only the CEO can read\n';
+  bp += '  - `owner-and-above` — you + your management chain up to CEO\n';
+  bp += '  - `branch` — all agents in your top-level branch\n';
+  bp += '  - `everyone` — all agents in the company\n';
+  bp += '  - An array of agent names/IDs — only those specific agents\n';
+  bp += '- **Write access** is always restricted to the page owner and CEO\n';
+  bp += '- You can change the access level on pages you own at any time by calling `sharedspace_write` with the new `access` value\n';
+  bp += '- Default access when omitted is `ceo-only` — set a wider level when the page is meant for others\n\n';
 
   bp += '**Page hygiene:**\n';
   bp +=
@@ -595,7 +713,8 @@ function buildVolumeMounts(
     group.folder,
     'agent-runner-src',
   );
-  if (!fs.existsSync(groupAgentRunnerDir) && fs.existsSync(agentRunnerSrc)) {
+  if (fs.existsSync(agentRunnerSrc)) {
+    // Always re-sync from source so code changes take effect without manual cleanup
     fs.cpSync(agentRunnerSrc, groupAgentRunnerDir, { recursive: true });
   }
   mounts.push({
@@ -780,6 +899,7 @@ export async function runContainerAgent(
     });
 
     onProcess(container, containerName);
+    registerRunContainer(runId, agentId, containerName);
 
     let stdout = '';
     let stderr = '';
@@ -902,6 +1022,7 @@ export async function runContainerAgent(
 
     container.on('close', (code) => {
       clearTimeout(timeout);
+      clearRunContainer(runId);
       const duration = Date.now() - startTime;
 
       // Record run completion

@@ -21,6 +21,7 @@ import {
 } from './channels/registry.js';
 import {
   ContainerOutput,
+  addRunTokensAndCheck,
   runContainerAgent,
   setRunAgentFn,
   broadcast,
@@ -556,6 +557,9 @@ async function main(): Promise<void> {
         used_tokens_today: agentTotal,
         total_tokens_today: totalTokens,
       });
+
+      // Per-run token budget: kill container if a single run burns too many tokens
+      addRunTokensAndCheck(info.runId, tokens);
     }
   });
 

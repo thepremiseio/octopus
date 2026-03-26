@@ -52,6 +52,12 @@ Read `spec/octopus-spec.md` for the full system design: agent hierarchy, SharedS
 
 Read `spec/api-spec.md` for the exact WebSocket event catalogue and REST endpoint contract (methods, paths, status codes, request/response shapes).
 
+## Container agent-runner
+
+The MCP tool definitions that agents see inside containers live in `packages/server/container/agent-runner/src/ipc-mcp-stdio.ts`. On each agent run, this source is synced to `data/sessions/{agent}/agent-runner-src/` and mounted into the container at `/app/src`, where it is compiled at container start. Changes to `ipc-mcp-stdio.ts` take effect on the next agent run without rebuilding the Docker image.
+
+The Docker image (`nanoclaw-agent:latest`) only needs rebuilding when dependencies change (e.g. new npm packages in `container/agent-runner/package.json`).
+
 ## Conventions
 
 - TypeScript throughout, strict mode

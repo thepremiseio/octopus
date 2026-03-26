@@ -13,7 +13,7 @@ export function MessageThread({ messages, agentName }: MessageThreadProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    bottomRef.current?.scrollIntoView({ behavior: 'instant' });
   }, [messages.length]);
 
   return (

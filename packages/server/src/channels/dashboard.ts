@@ -2,7 +2,11 @@
  * Octopus Boardroom — WebSocket + REST API server
  * Replaces the WhatsApp channel with a local dashboard API.
  */
+import { spawn } from 'child_process';
+import fs from 'fs';
 import http from 'http';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { WebSocketServer, WebSocket as WsWebSocket } from 'ws';
 
 import {
@@ -215,7 +219,10 @@ function buildConnectionState(): Record<string, unknown> {
     agents: agentStates,
     hitl_queue_count: hitlCards.length,
     crossbranch_queue_count: cbMessages.length,
-    total_tokens_today: agents.reduce((sum, a) => sum + getDailyTokenUsage(a.agent_id), 0),
+    total_tokens_today: agents.reduce(
+      (sum, a) => sum + getDailyTokenUsage(a.agent_id),
+      0,
+    ),
   };
 }
 
@@ -1572,6 +1579,33 @@ function setupRoutes(): void {
     sendNoContent(res);
   });
 
+  // --- Server restart ---
+
+  addRoute('POST', '/api/v1/restart', async (_req, res) => {
+    sendJson(res, 200, { ok: true });
+
+    // Determine the server package root (two dirs up from dist/channels/)
+    const __dirname = path.dirname(fileURLToPath(import.meta.url));
+    const serverRoot = path.resolve(__dirname, '..', '..');
+
+    // Spawn a detached process that waits for us to die, then rebuilds and restarts
+    const logFile = path.resolve(serverRoot, 'server.log');
+    const out = fs.openSync(logFile, 'a');
+    const child = spawn(
+      'bash',
+      ['-c', `sleep 1 && npm run build 2>&1 && npm run start 2>&1`],
+      {
+        cwd: serverRoot,
+        detached: true,
+        stdio: ['ignore', out, out],
+      },
+    );
+    child.unref();
+
+    // Give the response time to flush, then exit
+    setTimeout(() => process.exit(0), 200);
+  });
+
   // --- Internal: tool calls from agent containers ---
 
   addRoute('POST', '/api/v1/internal/tool-call', async (req, res) => {
@@ -1615,6 +1649,7 @@ function setupRoutes(): void {
               summary: string;
               body: string;
               owner?: string;
+              access?: string | string[];
             },
             run_id,
           );
