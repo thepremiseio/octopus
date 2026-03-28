@@ -266,10 +266,7 @@ export function clearRunContainer(runId: string): void {
  * Add tokens to a run's accumulator. If the run exceeds RUN_TOKEN_BUDGET,
  * kill the container and create a HITL card. Returns true if the run was killed.
  */
-export function addRunTokensAndCheck(
-  runId: string,
-  tokens: number,
-): boolean {
+export function addRunTokensAndCheck(runId: string, tokens: number): boolean {
   if (RUN_TOKEN_BUDGET <= 0) return false; // no limit configured
 
   const current = (runTokens.get(runId) || 0) + tokens;
@@ -380,6 +377,8 @@ export function getToolCategory(toolName: string): string {
     case 'sharedspace_list':
       return 'read';
     case 'sharedspace_write':
+    case 'sharedspace_delete':
+    case 'sharedspace_move':
       return 'write';
     case 'request_hitl':
     case 'task_complete':
@@ -446,7 +445,8 @@ export function generateBoilerplate(agentId: string): string {
   bp += '\n## Instructions\n\n';
   bp +=
     '- **Escalation:** If you hit a decision you cannot make alone, escalate to your manager.\n';
-  bp += '- **Inbox:** Process unread inbox messages before your main task. Do not send the CEO a message to confirm you have processed an inter-agent message unless it contains something that requires CEO input or action. Silent processing is the default.\n';
+  bp +=
+    '- **Inbox:** Process unread inbox messages before your main task. Do not send the CEO a message to confirm you have processed an inter-agent message unless it contains something that requires CEO input or action. Silent processing is the default.\n';
   bp +=
     '- **Approvals:** See SharedSpace approval policy for when approval is required.\n';
   bp +=
@@ -455,7 +455,8 @@ export function generateBoilerplate(agentId: string): string {
   // Available Tools
   bp += '\n## Available Tools\n\n';
   bp += '- `sharedspace_read(id)` — Read a SharedSpace page\n';
-  bp += '- `sharedspace_write(id, content, access?)` — Write a SharedSpace page (optionally set read access)\n';
+  bp +=
+    '- `sharedspace_write(id, content, access?)` — Write a SharedSpace page (optionally set read access)\n';
   bp += '- `sharedspace_list(prefix?)` — List SharedSpace pages\n';
   bp +=
     '- `send_message(to, subject, body)` — Send a message to another agent\n';
@@ -497,15 +498,18 @@ export function generateBoilerplate(agentId: string): string {
     '- Summaries of conversations you just had — that is private storage territory\n\n';
 
   bp += '**Access control:**\n';
-  bp += '- Every page has a read access level, set via the `access` parameter on `sharedspace_write`:\n';
+  bp +=
+    '- Every page has a read access level, set via the `access` parameter on `sharedspace_write`:\n';
   bp += '  - `ceo-only` (default) — only the CEO can read\n';
   bp += '  - `owner-and-above` — you + your management chain up to CEO\n';
   bp += '  - `branch` — all agents in your top-level branch\n';
   bp += '  - `everyone` — all agents in the company\n';
   bp += '  - An array of agent names/IDs — only those specific agents\n';
   bp += '- **Write access** is always restricted to the page owner and CEO\n';
-  bp += '- You can change the access level on pages you own at any time by calling `sharedspace_write` with the new `access` value\n';
-  bp += '- Default access when omitted is `ceo-only` — set a wider level when the page is meant for others\n\n';
+  bp +=
+    '- You can change the access level on pages you own at any time by calling `sharedspace_write` with the new `access` value\n';
+  bp +=
+    '- Default access when omitted is `ceo-only` — set a wider level when the page is meant for others\n\n';
 
   bp += '**Page hygiene:**\n';
   bp +=
@@ -872,6 +876,9 @@ export async function runContainerAgent(
   // Mark agent as active and record run start
   const agentId = input.groupFolder;
   const runId = input.runId || generateId('run');
+  // Ensure the container receives the generated runId so the agent-runner
+  // can pass it back on tool calls (e.g. task_complete).
+  input.runId = runId;
   const prevAgent = getAgentById(agentId);
   if (prevAgent && prevAgent.status !== 'active') {
     updateAgentStatus(agentId, 'active');

@@ -445,6 +445,37 @@ if (isOctopus) {
   );
 
   server.tool(
+    'sharedspace_delete',
+    'Delete a SharedSpace page you own. Fails if the page has child pages — delete children first.',
+    {
+      page_id: z.string().describe('The page ID to delete (e.g. "work/ventures/old-project")'),
+    },
+    async (args) => {
+      const result = await callHostTool('sharedspace_delete', { page_id: args.page_id });
+      if (result.error) {
+        return { content: [{ type: 'text' as const, text: `Error: ${result.error}` }], isError: true };
+      }
+      return { content: [{ type: 'text' as const, text: `Page '${args.page_id}' deleted.` }] };
+    },
+  );
+
+  server.tool(
+    'sharedspace_move',
+    'Move (rename) a SharedSpace page you own to a new path. Content, access level, and ownership are preserved. Fails if the page has child pages — move children first.',
+    {
+      old_page_id: z.string().describe('Current page ID (e.g. "work/reports/draft")'),
+      new_page_id: z.string().describe('New page ID (e.g. "work/reports/q1-final")'),
+    },
+    async (args) => {
+      const result = await callHostTool('sharedspace_move', { old_page_id: args.old_page_id, new_page_id: args.new_page_id });
+      if (result.error) {
+        return { content: [{ type: 'text' as const, text: `Error: ${result.error}` }], isError: true };
+      }
+      return { content: [{ type: 'text' as const, text: `Page moved: '${args.old_page_id}' → '${args.new_page_id}'.` }] };
+    },
+  );
+
+  server.tool(
     'task_complete',
     `Always call this when your work is complete.
 - If your work produced something the CEO should see, pass it as \`message\`.

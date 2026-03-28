@@ -405,7 +405,7 @@ For tool results, `entry_type` is `"tool_result"` and `outcome` carries a brief 
 | `run_id`        | string  | |
 | `entry_id`      | string  | Correlation identifier shared by a `tool_call` and its corresponding `tool_result`. Both entries in a call/result pair carry the same `entry_id` so the Boardroom can link them. IDs are unique across pairs within a run but intentionally repeated within each pair. |
 | `entry_type`    | `"tool_call"` \| `"tool_result"` | |
-| `tool_name`     | string  | Exact tool identifier, e.g. `sharedspace_read`, `send_message`, `request_hitl` |
+| `tool_name`     | string  | Exact tool identifier, e.g. `sharedspace_read`, `sharedspace_delete`, `sharedspace_move`, `send_message`, `request_hitl` |
 | `tool_category` | `"read"` \| `"write"` \| `"hitl"` \| `"message"` \| `"shell"` | Used by the Boardroom to colour-code entries. `"read"` → blue; `"hitl"` → amber; `"write"`, `"message"`, `"shell"` → muted |
 | `detail`        | string  | Serialised tool arguments, truncated to 200 chars |
 | `outcome`       | string \| null | Brief result summary for `tool_result`; `null` for `tool_call` |
@@ -652,7 +652,7 @@ For tool results, `entry_type` is `"tool_result"` and `outcome` carries a brief 
 
 ### 3.18 `sharedspace.page.updated`
 
-**Trigger:** Any agent or the CEO writes a SharedSpace page (`sharedspace_write` tool, direct edit via the Boardroom, or external filesystem edit detected by the vault watcher). Fired after the write is committed and the SharedSpace index cache is invalidated.
+**Trigger:** Any agent or the CEO writes, deletes, or moves a SharedSpace page (`sharedspace_write`, `sharedspace_delete`, or `sharedspace_move` tool, direct edit via the Boardroom, or external filesystem edit detected by the vault watcher). Fired after the change is committed and the SharedSpace index cache is invalidated.
 
 **Boardroom behaviour:** If the SharedSpace Browser is open and this page is visible, update the `●` recently-updated indicator in the page tree. If the page is currently being viewed and `updated_by_agent_id` is **not** `"ceo"`, prompt the user that the page has changed externally (or auto-reload if the page is unedited). If `updated_by_agent_id` is `"ceo"`, the Boardroom was the writer — suppress the prompt to avoid the CEO being notified of their own save.
 
@@ -682,7 +682,7 @@ For tool results, `entry_type` is `"tool_result"` and `outcome` carries a brief 
 | `summary`            | string  | One-line summary (the index-visible field) |
 | `owner_agent_id`     | string  | Agent that owns this page |
 | `updated_by_agent_id`| string  | Agent, `"ceo"`, or `"filesystem"` (for external edits detected by vault watcher) |
-| `operation`          | `"created"` \| `"updated"` \| `"deleted"` | For `"deleted"`, `title` and `summary` reflect the last known values |
+| `operation`          | `"created"` \| `"updated"` \| `"deleted"` | For `"deleted"`, `title` and `summary` reflect the last known values. A `sharedspace_move` emits two events: `"created"` for the new page and `"deleted"` for the old. |
 | `access`             | string \| string[] | Read access level: `"ceo-only"`, `"owner-and-above"`, `"branch"`, `"everyone"`, or an array of agent IDs |
 | `parent_id`          | string \| null | Optional. Parent page ID, or `null` for root-level pages. May be omitted. |
 | `depth`              | integer | Optional. 0-based depth in the page tree. May be omitted. |

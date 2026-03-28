@@ -4,6 +4,8 @@
  * Tools available to agents running in containers:
  * - sharedspace_read(id)
  * - sharedspace_write(id, content)
+ * - sharedspace_delete(id)
+ * - sharedspace_move(old_id, new_id)
  * - sharedspace_list(prefix?)
  * - send_message(to, subject, body)
  * - request_hitl(type, subject, context, options?, preference?)
@@ -30,9 +32,11 @@ import {
 import {
   readPage,
   writePage,
+  deletePage,
   listPages,
   AccessDeniedError,
   ParentNotFoundError,
+  PageHasChildrenError,
 } from './sharedspace.js';
 
 // --- Activity recording ---
@@ -281,6 +285,117 @@ export function sharedspaceList(
   };
 }
 
+export function sharedspaceDelete(
+  agentId: string,
+  pageId: string,
+  runId: string,
+): ToolResult {
+  const entryId = recordToolCall(
+    agentId,
+    runId,
+    'sharedspace_delete',
+    `id: ${pageId}`,
+  );
+
+  try {
+    deletePage(pageId, agentId);
+    recordToolResult(
+      agentId,
+      runId,
+      entryId,
+      'sharedspace_delete',
+      `id: ${pageId}`,
+      'Page deleted',
+    );
+    checkCircuitBreaker(agentId, runId);
+    return { success: true, data: { page_id: pageId } };
+  } catch (err) {
+    const msg =
+      err instanceof AccessDeniedError || err instanceof PageHasChildrenError
+        ? err.message
+        : `Error deleting page '${pageId}'`;
+    recordToolResult(
+      agentId,
+      runId,
+      entryId,
+      'sharedspace_delete',
+      `id: ${pageId}`,
+      msg,
+    );
+    return { success: false, error: msg };
+  }
+}
+
+export function sharedspaceMove(
+  agentId: string,
+  oldPageId: string,
+  newPageId: string,
+  runId: string,
+): ToolResult {
+  const entryId = recordToolCall(
+    agentId,
+    runId,
+    'sharedspace_move',
+    `${oldPageId} → ${newPageId}`,
+  );
+
+  try {
+    // Read old page (checks read access)
+    const page = readPage(oldPageId, agentId);
+
+    // Must own the page to move it (same as write access)
+    const agentName = getAgentById(agentId)?.agent_name || agentId;
+    if (page.owner !== agentId && page.owner !== agentName) {
+      throw new AccessDeniedError(
+        `Access denied: cannot move page '${oldPageId}' (not owner)`,
+      );
+    }
+
+    // Write to new location (preserves owner, access, content)
+    writePage(
+      newPageId,
+      {
+        summary: page.summary,
+        body: page.body,
+        owner: page.owner,
+        access: page.access,
+      },
+      agentId,
+    );
+
+    // Delete the old page
+    deletePage(oldPageId, agentId);
+
+    recordToolResult(
+      agentId,
+      runId,
+      entryId,
+      'sharedspace_move',
+      `${oldPageId} → ${newPageId}`,
+      'Page moved',
+    );
+    checkCircuitBreaker(agentId, runId);
+    return {
+      success: true,
+      data: { old_page_id: oldPageId, new_page_id: newPageId },
+    };
+  } catch (err) {
+    const msg =
+      err instanceof AccessDeniedError || err instanceof PageHasChildrenError
+        ? err.message
+        : `Error moving page '${oldPageId}' to '${newPageId}'`;
+    recordToolResult(
+      agentId,
+      runId,
+      entryId,
+      'sharedspace_move',
+      `${oldPageId} → ${newPageId}`,
+      msg,
+    );
+    return { success: false, error: msg };
+  }
+}
+
 // --- send_message tool ---
 
 export interface SendMessageArgs {
@@ -342,8 +457,7 @@ export function sendMessage(
   // cross_branch_trusted agents bypass the CEO queue for cross-branch messages
   // (either the sender OR the recipient being trusted is sufficient)
   const isTrusted =
-    sender.cross_branch_trusted === 1 ||
-    recipient.cross_branch_trusted === 1;
+    sender.cross_branch_trusted === 1 || recipient.cross_branch_trusted === 1;
 
   const messageId = generateId('msg');
 

@@ -79,6 +79,8 @@ import {
 import {
   sharedspaceRead,
   sharedspaceWrite,
+  sharedspaceDelete,
+  sharedspaceMove,
   sharedspaceList,
   sendMessage,
   requestHitl,
@@ -100,6 +102,18 @@ function getDebugSubs(client: WsWebSocket): Set<string> {
     debugSubscriptions.set(client, subs);
   }
   return subs;
+}
+
+// --- Active chat viewing (suppresses push notifications) ---
+
+const viewingAgent = new Map<WsWebSocket, string | null>();
+
+/** Check if any connected client is currently viewing a specific agent's chat */
+function isViewingAgent(agentId: string): boolean {
+  for (const viewing of viewingAgent.values()) {
+    if (viewing === agentId) return true;
+  }
+  return false;
 }
 
 /** Send a debug exchange event only to clients subscribed to the agent */
@@ -127,17 +141,19 @@ function wsBroadcast(event: OctopusEvent): void {
     wsSend(client, data);
   }
 
-  // Send push notification for chat messages
+  // Send push notification for chat messages — skip if CEO is viewing that chat
   if (event.type === 'chat.message.received') {
     const payload = event.payload as {
       agent_id: string;
       content: string;
     };
-    const agent = getAgentById(payload.agent_id);
-    const agentName = agent?.agent_name ?? payload.agent_id;
-    sendPushNotification(payload.agent_id, agentName, payload.content).catch(
-      (err) => logger.warn({ err }, 'Push notification error'),
-    );
+    if (!isViewingAgent(payload.agent_id)) {
+      const agent = getAgentById(payload.agent_id);
+      const agentName = agent?.agent_name ?? payload.agent_id;
+      sendPushNotification(payload.agent_id, agentName, payload.content).catch(
+        (err) => logger.warn({ err }, 'Push notification error'),
+      );
+    }
   }
 }
 
@@ -1654,6 +1670,17 @@ function setupRoutes(): void {
             run_id,
           );
           break;
+        case 'sharedspace_delete':
+          result = sharedspaceDelete(agent_id, args.page_id as string, run_id);
+          break;
+        case 'sharedspace_move':
+          result = sharedspaceMove(
+            agent_id,
+            args.old_page_id as string,
+            args.new_page_id as string,
+            run_id,
+          );
+          break;
         case 'sharedspace_list':
           result = sharedspaceList(
             agent_id,
@@ -1809,7 +1836,9 @@ export function startDashboardServer(port: number): http.Server {
           type?: string;
           agent_id?: string;
         };
-        if (msg.type === 'debug.subscribe' && msg.agent_id) {
+        if (msg.type === 'chat.viewing') {
+          viewingAgent.set(ws, msg.agent_id ?? null);
+        } else if (msg.type === 'debug.subscribe' && msg.agent_id) {
           getDebugSubs(ws).add(msg.agent_id);
           // Track globally so the credential proxy knows to capture
           addDebugAgent(msg.agent_id);
@@ -1853,6 +1882,7 @@ export function startDashboardServer(port: number): http.Server {
       }
       clients.delete(ws);
       debugSubscriptions.delete(ws);
+      viewingAgent.delete(ws);
     };
 
     ws.on('close', cleanupClient);

@@ -45,7 +45,7 @@ All persistent state is in a single SQLite file at `store/messages.db`.
 | `src/container-runner.ts` | Spawns agent containers, assembles system prompts, records token usage, enforces daily budget, action-count circuit breaker, and per-run token budget (kills container on breach), broadcasts domain events over WebSocket |
 | `src/sharedspace.ts` | Obsidian-compatible markdown vault — frontmatter parsing, access control (ceo-only/owner-and-above/branch/everyone/explicit list), read/write/delete/list operations, agent context index |
 | `src/vault-watcher.ts` | File watcher (chokidar) — keeps SQLite index in sync with filesystem vault, full scan on startup, debounced event handlers, creates starter pages on first run |
-| `src/tools.ts` | Agent tool implementations: `sharedspace_read`, `sharedspace_write`, `sharedspace_list`, `send_message`, `request_hitl`, `task_complete` — each enforces access rules and emits events. SharedSpace page owners are stored by agent name (not ID). |
+| `src/tools.ts` | Agent tool implementations: `sharedspace_read`, `sharedspace_write`, `sharedspace_delete`, `sharedspace_move`, `sharedspace_list`, `send_message`, `request_hitl`, `task_complete` — each enforces access rules and emits events. SharedSpace page owners are stored by agent name (not ID). |
 | `src/channels/dashboard.ts` | WebSocket + REST API server (replaces WhatsApp channel) — implements the full contract from `spec/api-spec.md`, including `POST /restart` for server rebuild+restart |
 | `src/channels/registry.ts` | Channel factory registry — channels self-register on import |
 | `src/channels/index.ts` | Barrel file — imports channels to trigger registration |

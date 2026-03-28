@@ -14,7 +14,7 @@ Agents are organised in a tree — departments, managers, workers — with the u
 
 - **Agent hierarchy** — free-form tree of agents, each in its own container with scoped filesystem and memory. Any structure: a personal life OS, a business, multiple ventures, or any hybrid.
 - **Human-in-the-loop** — consequential decisions surface as approval cards. Cross-branch communications route through the CEO for review.
-- **SharedSpace** — shared wiki layer (company intranet) with granular access control: `ceo-only`, `owner-and-above`, `branch`, `everyone`, or explicit agent lists. Agents control read access on their own pages.
+- **SharedSpace** — shared wiki layer (company intranet) with granular access control: `ceo-only`, `owner-and-above`, `branch`, `everyone`, or explicit agent lists. Agents can read, write, delete, and move pages they own.
 - **Boardroom** — React dashboard for managing agents, approving decisions, chatting, editing wiki pages, and monitoring costs.
 - **Branch isolation** — strict privacy between top-level branches by architecture, not policy. No information leaks between departments unless the CEO explicitly routes it.
 - **Token budgets & circuit breakers** — per-agent daily budgets plus per-run token limits with automatic container kill on runaway spending.
